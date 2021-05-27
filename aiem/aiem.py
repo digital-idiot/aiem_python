@@ -2,7 +2,8 @@ from functools import partial
 from types import SimpleNamespace
 from numpy import integer, floating, complexfloating
 from mpmath import (
-    mpmathify, almosteq, mpf, mpc, sin, cos, fabs, sqrt, gamma, besselk, ln, exp
+    mpmathify, almosteq, mpf, mpc, sin, cos, fabs, sqrt, gamma, besselk, ln,
+    exp, factorial
 )
 
 
@@ -201,7 +202,7 @@ class AdvancedIntegralEquationModel(object):
         self.cache.kl2 = self.cache.kl ** 2
 
         iter_factor = self.cache.ks * (
-            (self.cache.cos_ti + self.cache.cos_ts) ** 2
+                (self.cache.cos_ti + self.cache.cos_ts) ** 2
         )
         n_iter = 1
         term_prev = mpmathify(0)
@@ -250,19 +251,19 @@ class AdvancedIntegralEquationModel(object):
                 )
             return term
 
-        spectra = map(partial(calc_spectra, c=self.cache), range(n_iter))
+        spectra = list(map(partial(calc_spectra, c=self.cache), range(n_iter)))
         eps_r = self.get_eps_r()
         mu_r = self.get_mu_r()
         stem = sqrt((eps_r * mu_r) - self.cache.sti2)
         r_vv_i = (
-            (eps_r * self.cache.cos_ti) - stem
+                         (eps_r * self.cache.cos_ti) - stem
         ) / (
-            (eps_r * self.cache.cos_ti) + stem
+                         (eps_r * self.cache.cos_ti) + stem
         )
         r_hh_i = (
-            (mu_r * self.cache.cos_ti) - stem
+                         (mu_r * self.cache.cos_ti) - stem
         ) / (
-            (mu_r * self.cache.cos_ti) + stem
+                         (mu_r * self.cache.cos_ti) + stem
         )
         r_vh_i = (r_vv_i - r_hh_i) / 2
 
@@ -275,15 +276,15 @@ class AdvancedIntegralEquationModel(object):
 
     def _expal(self, q):
         q = mpmathify(q)
-        cache = self.cache
+        c = self.cache
         expalresult = exp(
-            -cache.ks2 * (q ** 2.0 - q * (cache.cos_ts - cache.cos_ti))
+            -c.ks2 * (q ** 2.0 - q * (c.cos_ts - c.cos_ti))
         )
         return expalresult
 
     def _spectra_foo(self):
-        cache = self.cache
-        if not cache.state:
+        c = self.cache
+        if not c.state:
             self._init_cache()
         eps_r = self.get_eps_r()
         mu_r = self.get_mu_r()
@@ -291,9 +292,9 @@ class AdvancedIntegralEquationModel(object):
         csl = (
             sqrt(
                 1 + (
-                    cache.cos_ti * cache.cos_ts
+                    c.cos_ti * c.cos_ts
                 ) - (
-                    cache.sin_ti * cache.sin_ts * cache.cos_ps
+                    c.sin_ti * c.sin_ts * c.cos_ps
                 )
             )
         ) / (sqrt(2))
@@ -305,53 +306,54 @@ class AdvancedIntegralEquationModel(object):
 
         rv0 = (sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
         rh0 = -(sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
-        f_tv = 8 * (rv0 ^ 2) * cache.sti2 * (
-            cache.cos_ti + sqrt(eps_r - cache.sti2)
+        f_tv = 8 * (rv0 ^ 2) * c.sti2 * (
+            c.cos_ti + sqrt(eps_r - c.sti2)
         ) / (
-            cache.cos_ti * (sqrt(eps_r - cache.sti2))
+            c.cos_ti * (sqrt(eps_r - c.sti2))
         )
-        f_th = -8 * (rh0 ^ 2) * cache.sti2 * (
-            cache.cos_ti + sqrt(eps_r - cache.sti2)
+        f_th = -8 * (rh0 ^ 2) * c.sti2 * (
+            c.cos_ti + sqrt(eps_r - c.sti2)
         ) / (
-            cache.cos_ti * (sqrt(eps_r - cache.sti2))
+            c.cos_ti * (sqrt(eps_r - c.sti2))
         )
         st0v = 1 / (
-            (fabs(1 + 8 * rv0 / (cache.cos_ti * f_tv))) ** 2
+            (fabs(1 + 8 * rv0 / (c.cos_ti * f_tv))) ** 2
         )
         st0h = 1 / (
-            (fabs(1 + 8 * rv0 / (cache.cos_ti * f_th))) ** 2
+            (fabs(1 + 8 * rv0 / (c.cos_ti * f_th))) ** 2
         )
 
-        sum_a = mpmathify(0)
-        sum_b = mpmathify(0)
-        sum_c = mpmathify(0)
-        i_factor = mpmathify(1)
+        def calc_abc(k, stash):
+            m = mpmathify(k + 1)
+            i_factor = 1 / factorial(m)
 
-        for j in range(cache.n_iter):
-            n = mpmathify(j + 1)
-            i_factor *= 1 / mpmathify(n)
+            a_ = i_factor * (
+                    (stash.ks * stash.cos_ti) ** (2 * m)
+            ) * stash.spectra[k]
 
-            sum_a += i_factor * (
-                (cache.ks * cache.cos_ti) ** (2 * n)
-            ) * cache.spectra[j]
-
-            sum_b += i_factor * (
-                    (cache.ks * cache.cos_ti) ** (2 * n)
+            b_ = i_factor * (
+                    (stash.ks * stash.cos_ti) ** (2 * m)
             ) * (
                 fabs(
-                    f_tv + (2 ** (n + 2)) * rv0 / cache.cos_ti / exp(
-                        (cache.ks * cache.cos_ti) ** 2
+                    f_tv + (2 ** (m + 2)) * rv0 / stash.cos_ti / exp(
+                        (stash.ks * stash.cos_ti) ** 2
                     )
                 ) ** 2
-            ) * cache.spectra[j]
+            ) * stash.spectra[k]
 
-            sum_c += i_factor * ((cache.ks * cache.cos_ti) ** (2 * n)) * (
+            c_ = i_factor * ((stash.ks * stash.cos_ti) ** (2 * m)) * (
                 fabs(
-                    f_tv + (2 ** (n + 2)) * rv0 / cache.cos_ti * exp(
-                        (cache.ks * cache.cos_ti) ** 2
+                    f_tv + (2 ** (m + 2)) * rv0 / stash.cos_ti * exp(
+                        (stash.ks * stash.cos_ti) ** 2
                     )
                 ) ** 2
-            ) * cache.spectra[j]
+            ) * stash.spectra[k]
+            return [a_, b_, c_]
+
+        abc_list = list(
+            map(partial(calc_abc, stash=c), range(c.n_iter))
+        )
+        sum_a, sum_b, sum_c = list(map(sum, map(list, zip(*abc_list))))
 
         stv = (fabs(f_tv) ** 2) * sum_a / sum_b
         sth = (fabs(f_th) ** 2) * sum_a / sum_c
@@ -364,45 +366,45 @@ class AdvancedIntegralEquationModel(object):
         if tfh < mpmathify(0):
             tfh = mpmathify(0)
 
-        rvv = cache.r_vv_i + (r_vv_l - cache.r_vv_i) * tfv
-        rhh = cache.r_hh_i + (r_hh_l - cache.r_hh_i) * tfh
+        rvv = c.r_vv_i + (r_vv_l - c.r_vv_i) * tfv
+        rhh = c.r_hh_i + (r_hh_l - c.r_hh_i) * tfh
         rvh = (rvv - rhh) / mpmathify(2.0)
 
         zxx = -(
-            cache.sin_ts * cache.cos_ps - cache.sin_ti
-        ) / (cache.cos_ts + cache.cos_ti)
+            c.sin_ts * c.cos_ps - c.sin_ti
+        ) / (c.cos_ts + c.cos_ti)
         zyy = -(
-            cache.sin_ts * cache.sin_ps
-        ) / (cache.cos_ts + cache.cos_ti)
+            c.sin_ts * c.sin_ps
+        ) / (c.cos_ts + c.cos_ti)
         d2 = sqrt(
-            (zxx * cache.cos_ti - cache.sin_ti) ** 2 + zyy ** 2
+            (zxx * c.cos_ti - c.sin_ti) ** 2 + zyy ** 2
         )
-        h_sn_v = -(cache.cos_ti * cache.cos_ps + cache.sin_ti * (
-            zxx * cache.cos_ps + zyy * cache.sin_ps)
+        h_sn_v = -(c.cos_ti * c.cos_ps + c.sin_ti * (
+            zxx * c.cos_ps + zyy * c.sin_ps)
         )
-        v_sn_h = cache.cos_ts * cache.cos_ps - zxx * cache.sin_ts
-        h_sn_h = -cache.sin_ps
-        v_sn_v = zyy * cache.cos_ti * cache.sin_ts + cache.cos_ts * (
-            zyy * cache.cos_ps * cache.sin_ti - (
-                cache.cos_ti + zxx * cache.sin_ti
-            ) * cache.sin_ps
+        v_sn_h = c.cos_ts * c.cos_ps - zxx * c.sin_ts
+        h_sn_h = -c.sin_ps
+        v_sn_v = zyy * c.cos_ti * c.sin_ts + c.cos_ts * (
+            zyy * c.cos_ps * c.sin_ti - (
+                c.cos_ti + zxx * c.sin_ti
+            ) * c.sin_ps
         )
 
         h_sn_t = (
-            -(cache.cti2 + cache.sti2) * cache.sin_ps * (
-                -cache.sin_ti + cache.cos_ti * zxx
-            ) + cache.cos_ps * (
-                cache.cos_ti + cache.sin_ti * zxx
-            ) * zyy + cache.sin_ti * cache.sin_ps * (zyy ** 2)
+            -(c.cti2 + c.sti2) * c.sin_ps * (
+                -c.sin_ti + c.cos_ti * zxx
+            ) + c.cos_ps * (
+                c.cos_ti + c.sin_ti * zxx
+            ) * zyy + c.sin_ti * c.sin_ps * (zyy ** 2)
         ) / d2
 
         h_sn_d = (
-            -(cache.cos_ti + cache.sin_ti * zxx) * (
-                (-cache.cos_ps * cache.sin_ti) + (
+            -(c.cos_ti + c.sin_ti * zxx) * (
+                (-c.cos_ps * c.sin_ti) + (
                      (
-                         cache.cos_ti * cache.cos_ps * zxx
+                         c.cos_ti * c.cos_ps * zxx
                      ) + (
-                         cache.cos_ti * cache.sin_ps * zyy
+                         c.cos_ti * c.sin_ps * zyy
                      )
                 )
             )
@@ -410,32 +412,32 @@ class AdvancedIntegralEquationModel(object):
 
         v_sn_t = (
             (
-                cache.cti2 + cache.sti2
+                c.cti2 + c.sti2
             ) * (
-                -cache.sin_ti + cache.cos_ti * zxx
+                -c.sin_ti + c.cos_ti * zxx
             ) * (
-                cache.cos_ps * cache.cos_ts - cache.sin_ts * zxx
-            ) + cache.cos_ts * cache.sin_ps * (
-                cache.cos_ti + cache.sin_ti * zxx
+                c.cos_ps * c.cos_ts - c.sin_ts * zxx
+            ) + c.cos_ts * c.sin_ps * (
+                c.cos_ti + c.sin_ti * zxx
             ) * zyy - (
                 (
-                    cache.cos_ps * cache.cos_ts * cache.sin_ti
+                    c.cos_ps * c.cos_ts * c.sin_ti
                 ) + (
-                    cache.cos_ti * cache.sin_ts
+                    c.cos_ti * c.sin_ts
                 )
             ) * (
                 zyy ** 2
             )
         ) / d2
 
-        v_sn_d = -(cache.cos_ti + cache.sin_ti * zxx) * (
-            cache.sin_ti * cache.sin_ts * zyy - cache.cos_ts * (
+        v_sn_d = -(c.cos_ti + c.sin_ti * zxx) * (
+            c.sin_ti * c.sin_ts * zyy - c.cos_ts * (
                 (
-                    cache.sin_ti * cache.sin_ps
+                    c.sin_ti * c.sin_ps
                 ) - (
-                    cache.cos_ti * cache.sin_ps * zxx
+                    c.cos_ti * c.sin_ps * zxx
                 ) + (
-                    cache.cos_ti * cache.cos_ps * zyy
+                    c.cos_ti * c.cos_ps * zyy
                 )
             )
         ) / d2
@@ -457,18 +459,18 @@ class AdvancedIntegralEquationModel(object):
         fvh = -(1 + rhh) * h_sn_h + (1 - rhh) * v_sn_v + (
                 h_sn_d - v_sn_t
         ) * (rhh + rvv) * (zyy / d2)
+        
+        def calc_term(t, stash):
+            n = t + 1
+            t_factor = (
+               stash.ks2 * (stash.cos_ti + stash.cos_ts) ** (2 * n)
+            ) / factorial(n)
+            return t_factor
 
-        n_sum = 0
-        k_factor = 1
-        for i in range(cache.n_iter):
-            n = i + 1
-            k_factor *= (
-                cache.ks2 * (cache.cos_ti + cache.cos_ts) ** 2
-            ) / n
-            n_sum += k_factor * cache.spectra[i]
+        n_sum = sum(list(map(partial(calc_term, c=c), range(c.n_iter))))
 
         exp_k = exp(
-            -cache.ks2 * (cache.cos_ts + cache.cos_ti) ** 2
+            -c.ks2 * (c.cos_ts + c.cos_ti) ** 2
         ) * n_sum
         k_term = [
             (0.5 * exp_k * fabs(fvv) ** 2),
@@ -476,266 +478,266 @@ class AdvancedIntegralEquationModel(object):
             (0.5 * exp_k * fabs(fhv) ** 2),
             (0.5 * exp_k * fabs(fvh) ** 2)
         ]
-        qq1 = cache.cos_ti
-        qq2 = cache.cos_ts
-        qq3 = sqrt(eps_r - cache.sti2)
-        qq4 = sqrt(eps_r - cache.sts2)
+        qq1 = c.cos_ti
+        qq2 = c.cos_ts
+        qq3 = sqrt(eps_r - c.sti2)
+        qq4 = sqrt(eps_r - c.sts2)
 
         fvaupi = self.favv(
-            -cache.sin_ti, 0.0, qq1, qq1, qq1
+            -c.sin_ti, 0.0, qq1, qq1, qq1
         ) * self._expal(qq1)
         fvadni = self.favv(
-            -cache.sin_ti, 0.0, -qq1, -qq1, qq1
+            -c.sin_ti, 0.0, -qq1, -qq1, qq1
         ) * self._expal(-qq1)
         fvaups = self.favv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq2,
             qq2,
             qq2
         ) * self._expal(qq2)
         fvadns = self.favv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq2,
             -qq2,
             qq2
         ) * self._expal(-qq2)
         fvbupi = self.fbvv(
-            -cache.sin_ti, 0.0, qq3, qq3, qq3
+            -c.sin_ti, 0.0, qq3, qq3, qq3
         ) * self._expal(qq3)
         fvbdni = self.fbvv(
-            -cache.sin_ti, 0.0, -qq3, -qq3, qq3
+            -c.sin_ti, 0.0, -qq3, -qq3, qq3
         ) * self._expal(-qq3)
         fvbups = self.fbvv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq4,
             qq4,
             qq4
         ) * self._expal(qq4)
         fvbdns = self.fbvv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq4,
             -qq4,
             qq4
         ) * self._expal(-qq4)
         fhaupi = self.fahh(
-            -cache.sin_ti, 0.0, qq1, qq1, qq1
+            -c.sin_ti, 0.0, qq1, qq1, qq1
         ) * self._expal(qq1)
         fhadni = self.fahh(
-            -cache.sin_ti, 0.0, -qq1, -qq1, qq1
+            -c.sin_ti, 0.0, -qq1, -qq1, qq1
         ) * self._expal(-qq1)
         fhaups = self.fahh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq2,
             qq2,
             qq2
         ) * self._expal(qq2)
         fhadns = self.fahh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq2,
             -qq2,
             qq2
         ) * self._expal(-qq2)
         fhbupi = self.fbhh(
-            -cache.sin_ti, 0.0, qq3, qq3, qq3
+            -c.sin_ti, 0.0, qq3, qq3, qq3
         ) * self._expal(qq3)
         fhbdni = self.fbhh(
-            -cache.sin_ti, 0.0, -qq3, -qq3, qq3
+            -c.sin_ti, 0.0, -qq3, -qq3, qq3
         ) * self._expal(-qq3)
         fhbups = self.fbhh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq4,
             qq4,
             qq4
         ) * self._expal(qq4)
         fhbdns = self.fbhh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq4,
             -qq4,
             qq4
         ) * self._expal(-qq4)
         fhvaupi = self.fahv(
-            -cache.sin_ti, 0.0, qq1, qq1, qq1
+            -c.sin_ti, 0.0, qq1, qq1, qq1
         ) * self._expal(qq1)
         fhvadni = self.fahv(
-            -cache.sin_ti, 0.0, -qq1, -qq1, qq1
+            -c.sin_ti, 0.0, -qq1, -qq1, qq1
         ) * self._expal(-qq1)
         fhvaups = self.fahv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq2,
             qq2,
             qq2
         ) * self._expal(qq2)
         fhvadns = self.fahv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq2,
             -qq2,
             qq2
         ) * self._expal(-qq2)
         fhvbupi = self.fbhv(
-            -cache.sin_ti, 0.0, qq3, qq3, qq3
+            -c.sin_ti, 0.0, qq3, qq3, qq3
         ) * self._expal(qq3)
         fhvbdni = self.fbhv(
-            -cache.sin_ti, 0.0, -qq3, -qq3, qq3
+            -c.sin_ti, 0.0, -qq3, -qq3, qq3
         ) * self._expal(-qq3)
         fhvbups = self.fbhv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq4,
             qq4,
             qq4
         ) * self._expal(qq4)
         fhvbdns = self.fbhv(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq4, -
             qq4,
             qq4
         ) * self._expal(-qq4)
         fvhaupi = self.favh(
-            -cache.sin_ti, 0.0, qq1, qq1, qq1
+            -c.sin_ti, 0.0, qq1, qq1, qq1
         ) * self._expal(qq1)
         fvhadni = self.favh(
-            -cache.sin_ti, 0.0, -qq1, -qq1, qq1
+            -c.sin_ti, 0.0, -qq1, -qq1, qq1
         ) * self._expal(-qq1)
         fvhaups = self.favh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq2,
             qq2,
             qq2
         ) * self._expal(qq2)
         fvhadns = self.favh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq2,
             -qq2,
             qq2
         ) * self._expal(-qq2)
         fvhbupi = self.fbvh(
-            -cache.sin_ti, 0.0, qq3, qq3, qq3
+            -c.sin_ti, 0.0, qq3, qq3, qq3
         ) * self._expal(qq3)
         fvhbdni = self.fbvh(
-            -cache.sin_ti, 0.0, -qq3, -qq3, qq3
+            -c.sin_ti, 0.0, -qq3, -qq3, qq3
         ) * self._expal(-qq3)
         fvhbups = self.fbvh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             qq4,
             qq4,
             qq4
         ) * self._expal(qq4)
         fvhbdns = self.fbvh(
-            -cache.sin_ts * cache.cos_ps,
-            -cache.sin_ts * cache.sin_ps,
+            -c.sin_ts * c.cos_ps,
+            -c.sin_ts * c.sin_ps,
             -qq4,
             -qq4,
             qq4
         ) * self._expal(-qq4)
 
-        for j in range(cache.n_iter):
+        for j in range(c.n_iter):
             idx = j + 1
-            ivv = ((cache.cos_ti + cache.cos_ts) ** idx) * fvv * exp(
-                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ivv = ((c.cos_ti + c.cos_ts) ** idx) * fvv * exp(
+                -c.ks2*c.cos_ti*c.cos_ts
             ) + (
                 0.25 * (
                     fvaupi*(
-                        (cache.cos_ts - qq1) ** idx
+                        (c.cos_ts - qq1) ** idx
                     ) + fvadni * (
-                        (cache.cos_ts + qq1) ** idx
+                        (c.cos_ts + qq1) ** idx
                     ) + fvaups * (
-                        (cache.cos_ti + qq2) ** idx
+                        (c.cos_ti + qq2) ** idx
                     ) + fvadns * (
-                        (cache.cos_ti - qq2) ** idx
+                        (c.cos_ti - qq2) ** idx
                     ) + fvbupi * (
-                        (cache.cos_ts - qq3) ** idx
+                        (c.cos_ts - qq3) ** idx
                     ) + fvbdni * (
-                        (cache.cos_ts + qq3) ** idx
+                        (c.cos_ts + qq3) ** idx
                     ) + fvbups * (
-                        (cache.cos_ti + qq4) ** idx
+                        (c.cos_ti + qq4) ** idx
                     ) + fvbdns * (
-                        (cache.cos_ti - qq4) ** idx
+                        (c.cos_ti - qq4) ** idx
                     )
                 )
             )
 
-            ihh = ((cache.cos_ti + cache.cos_ts) ** idx) * fhh * exp(
-                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ihh = ((c.cos_ti + c.cos_ts) ** idx) * fhh * exp(
+                -c.ks2*c.cos_ti*c.cos_ts
             ) + (
                 0.25 * (
                     fhaupi * (
-                        (cache.cos_ts - qq1) ** idx
+                        (c.cos_ts - qq1) ** idx
                     ) + fhadni * (
-                        (cache.cos_ts + qq1) ** idx
+                        (c.cos_ts + qq1) ** idx
                     ) + fhaups * (
-                        (cache.cos_ti + qq2) ** idx
+                        (c.cos_ti + qq2) ** idx
                     ) + fhadns * (
-                        (cache.cos_ti - qq2) ** idx
+                        (c.cos_ti - qq2) ** idx
                     ) + fhbupi * (
-                        (cache.cos_ts - qq3) ** idx
+                        (c.cos_ts - qq3) ** idx
                     ) + fhbdni * (
-                        (cache.cos_ts + qq3) ** idx
+                        (c.cos_ts + qq3) ** idx
                     ) + fhbups * (
-                        (cache.cos_ti + qq4) ** idx
+                        (c.cos_ti + qq4) ** idx
                     ) + fhbdns * (
-                        (cache.cos_ti - qq4) ** idx
+                        (c.cos_ti - qq4) ** idx
                     )
                 )
             )
 
-            ihv = ((cache.cos_ti + cache.cos_ts) ** idx) * fhv * exp(
-                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ihv = ((c.cos_ti + c.cos_ts) ** idx) * fhv * exp(
+                -c.ks2*c.cos_ti*c.cos_ts
             ) + (
                 0.25 * (
                     fhvaupi*(
-                        (cache.cos_ts - qq1) ** idx
+                        (c.cos_ts - qq1) ** idx
                     ) + fhvadni * (
-                        (cache.cos_ts + qq1) ** idx
+                        (c.cos_ts + qq1) ** idx
                     ) + fhvaups * (
-                        (cache.cos_ti + qq2) ** idx
+                        (c.cos_ti + qq2) ** idx
                     ) + fhvadns * (
-                        (cache.cos_ti - qq2) ** idx
+                        (c.cos_ti - qq2) ** idx
                     ) + fhvbupi * (
-                        (cache.cos_ts - qq3) ** idx
+                        (c.cos_ts - qq3) ** idx
                     ) + fhvbdni * (
-                        (cache.cos_ts + qq3) ** idx
+                        (c.cos_ts + qq3) ** idx
                     ) + fhvbups * (
-                        (cache.cos_ti + qq4) ** idx
+                        (c.cos_ti + qq4) ** idx
                     ) + fhvbdns * (
-                        (cache.cos_ti-qq4) ** idx
+                        (c.cos_ti-qq4) ** idx
                     )
                 )
             )
 
-            ivh = ((cache.cos_ti + cache.cos_ts) ** idx) * fvh * exp(
-                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ivh = ((c.cos_ti + c.cos_ts) ** idx) * fvh * exp(
+                -c.ks2*c.cos_ti*c.cos_ts
             ) + (
                 0.25 * (
                     fvhaupi*(
-                        (cache.cos_ts - qq1) ** idx
+                        (c.cos_ts - qq1) ** idx
                     ) + fvhadni * (
-                        (cache.cos_ts + qq1) ** idx
+                        (c.cos_ts + qq1) ** idx
                     ) + fvhaups * (
-                        (cache.cos_ti + qq2) ** idx
+                        (c.cos_ti + qq2) ** idx
                     ) + fvhadns * (
-                        (cache.cos_ti - qq2) ** idx
+                        (c.cos_ti - qq2) ** idx
                     ) + fvhbupi * (
-                        (cache.cos_ts - qq3) ** idx
+                        (c.cos_ts - qq3) ** idx
                     ) + fvhbdni * (
-                        (cache.cos_ts + qq3) ** idx
+                        (c.cos_ts + qq3) ** idx
                     ) + fvhbups * (
-                        (cache.cos_ti + qq4) ** idx
+                        (c.cos_ti + qq4) ** idx
                     ) + fvhbdns * (
-                        (cache.cos_ti - qq4) ** idx
+                        (c.cos_ti - qq4) ** idx
                     )
                 )
             )
@@ -802,67 +804,67 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
+        c = self.cache
 
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
-        ksyv = cache.sin_ts * cache.sin_ps + v
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
+        ksyv = c.sin_ts * c.sin_ps + v
 
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
 
-        c1 = -cache.cos_ps * (-1.0 - zx * zxp) + cache.sin_ps * zxp * zy
-        c2 = -cache.cos_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ps * (
-            cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-            cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v * 
+        c1 = -c.cos_ps * (-1.0 - zx * zxp) + c.sin_ps * zxp * zy
+        c2 = -c.cos_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ps * (
+            c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+            c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v * 
             zy * zyp
         )
-        c3 = -cache.cos_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) + cache.sin_ps * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy
+        c3 = -c.cos_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp
+        ) + c.sin_ps * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy
         )
-        c4 = -cache.cos_ts * cache.sin_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
-        ) + cache.sin_ts * (
-            -cache.cos_ti * zx - cache.sin_ti * zx * zxp - cache.sin_ti * zy * 
+        c4 = -c.cos_ts * c.sin_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
+        ) + c.sin_ts * (
+            -c.cos_ti * zx - c.sin_ti * zx * zxp - c.sin_ti * zy * 
             zyp
         )
-        c5 = -cache.cos_ts * cache.sin_ps * (
+        c5 = -c.cos_ts * c.sin_ps * (
             -v * zx + v * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             q + u * zxp + v * zy
-        ) + cache.sin_ts * (
+        ) + c.sin_ts * (
             q * zx + u * zx * zxp + v * zxp * zy
         )
-        c6 = -cache.cos_ts * cache.sin_ps * (
-            -u * zyp + q * zx * zyp) - cache.cos_ps * cache.cos_ts * (
+        c6 = -c.cos_ts * c.sin_ps * (
+            -u * zyp + q * zx * zyp) - c.cos_ps * c.cos_ts * (
             v * zyp - q * zy * zyp
-        ) + cache.sin_ts * (
+        ) + c.sin_ts * (
             v * zx * zyp - u * zy * zyp
         )
 
-        rph = 1.0 + cache.r_hh_i
-        rmh = 1.0 - cache.r_hh_i
+        rph = 1.0 + c.r_hh_i
+        rmh = 1.0 - c.r_hh_i
         ah = rph / qfix
         bh = rmh / qfix
         fahhresult = -bh * (
@@ -882,64 +884,64 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
         
-        b1 = -cache.cos_ts * cache.sin_ps * (
+        b1 = -c.cos_ts * c.sin_ps * (
             -1.0 - zx * zxp
-        ) - cache.sin_ts * zy - cache.cos_ps * cache.cos_ts * zxp * zy
-        b2 = -cache.cos_ts * cache.sin_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ts * (
-             -cache.cos_ti * q * zy - q * cache.sin_ti * zxp * zy + q *
-             cache.sin_ti * zx * zyp - cache.cos_ti * u * zx * zyp -
-             cache.cos_ti * v * zy * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-             cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-             cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v *
+        ) - c.sin_ts * zy - c.cos_ps * c.cos_ts * zxp * zy
+        b2 = -c.cos_ts * c.sin_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ts * (
+             -c.cos_ti * q * zy - q * c.sin_ti * zxp * zy + q *
+             c.sin_ti * zx * zyp - c.cos_ti * u * zx * zyp -
+             c.cos_ti * v * zy * zyp
+        ) - c.cos_ps * c.cos_ts * (
+             c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+             c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v *
              zy * zyp
         )
-        b3 = -cache.cos_ts * cache.sin_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy
-        ) + cache.sin_ts * (
-             -cache.sin_ti * v * zx + cache.cos_ti * v * zx * zxp +
-             cache.sin_ti * u * zy - cache.cos_ti * u * zxp * zy
+        b3 = -c.cos_ts * c.sin_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy
+        ) + c.sin_ts * (
+             -c.sin_ti * v * zx + c.cos_ti * v * zx * zxp +
+             c.sin_ti * u * zy - c.cos_ti * u * zxp * zy
         )
-        b4 = -cache.cos_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) + cache.sin_ps * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
+        b4 = -c.cos_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) + c.sin_ps * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
         )
-        b5 = -cache.cos_ps * (-v * zx + v * zxp) + cache.sin_ps * (
+        b5 = -c.cos_ps * (-v * zx + v * zxp) + c.sin_ps * (
             q + u * zxp + v * zy
         )
-        b6 = -cache.cos_ps * (-u * zyp + q * zx * zyp) + cache.sin_ps * (
+        b6 = -c.cos_ps * (-u * zyp + q * zx * zyp) + c.sin_ps * (
             v * zyp - q * zy * zyp
         )
         
-        rp = 1.0 + cache.r_vh_i
-        rm = 1.0 - cache.r_vh_i
+        rp = 1.0 + c.r_vh_i
+        rm = 1.0 - c.r_vh_i
         a = rp / qfix
         b = rm / qfix
         fahvresult = b * (rp * b1 - rm * b2 - rp * b3) + a * (
@@ -957,64 +959,62 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
-        if fabs((cache.cos_ti + qslp).real) < precision:
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
 
-        b1 = -cache.cos_ts * cache.sin_ps * (
+        b1 = -c.cos_ts * c.sin_ps * (
             -1.0 - zx * zxp
-        ) - cache.sin_ts * zy - cache.cos_ps * cache.cos_ts * zxp * zy
-        b2 = -cache.cos_ts * cache.sin_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ts * (
-             -cache.cos_ti * q * zy - q * cache.sin_ti * zxp * zy + q *
-             cache.sin_ti * zx * zyp - cache.cos_ti * u * zx * zyp -
-             cache.cos_ti * v * zy * zyp) - cache.cos_ps * cache.cos_ts * (
-                 cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-                 cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti *
-                 v * zy * zyp
+        ) - c.sin_ts * zy - c.cos_ps * c.cos_ts * zxp * zy
+        b2 = -c.cos_ts * c.sin_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp - c.sin_ti *
+            u * zx * zxp - c.cos_ti * v * zyp - c.sin_ti * v * zx * zyp
+        ) + c.sin_ts * (
+             -c.cos_ti * q * zy - q * c.sin_ti * zxp * zy + q * c.sin_ti * zx *
+             zyp - c.cos_ti * u * zx * zyp - c.cos_ti * v * zy * zyp
+        ) - c.cos_ps * c.cos_ts * (
+             c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q * c.sin_ti * zyp -
+             c.cos_ti * u * zyp + c.sin_ti * v * zy * zyp
         )
-        b3 = -cache.cos_ts * cache.sin_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy
-        ) + cache.sin_ts * (
-            -cache.sin_ti * v * zx + cache.cos_ti * v * zx * zxp +
-            cache.sin_ti * u * zy - cache.cos_ti * u * zxp * zy
+        b3 = -c.cos_ts * c.sin_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp + c.cos_ti *
+            q * zx * zxp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy
+        ) + c.sin_ts * (
+            -c.sin_ti * v * zx + c.cos_ti * v * zx * zxp + c.sin_ti * u * zy -
+            c.cos_ti * u * zxp * zy
         )
-        b4 = -cache.cos_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) + cache.sin_ps * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
+        b4 = -c.cos_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) + c.sin_ps * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
         )
-        b5 = -cache.cos_ps * (-v * zx + v * zxp) + cache.sin_ps * (
+        b5 = -c.cos_ps * (-v * zx + v * zxp) + c.sin_ps * (
             q + u * zxp + v * zy
         )
-        b6 = -cache.cos_ps * (
+        b6 = -c.cos_ps * (
             -u * zyp + q * zx * zyp
-        ) + cache.sin_ps * (
+        ) + c.sin_ps * (
             v * zyp - q * zy * zyp
         )
 
-        rp = 1.0 + cache.r_vh_i
-        rm = 1.0 - cache.r_vh_i
+        rp = 1.0 + c.r_vh_i
+        rm = 1.0 - c.r_vh_i
         a = rp / qfix
         b = rm / qfix
         favhresult = b * (
@@ -1034,66 +1034,66 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
         kyv = v
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
         
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = kyv / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = kyv / (c.cos_ti + qslp)
         
-        c1 = -cache.cos_ps * (-1.0 - zx * zxp) + cache.sin_ps * zxp * zy
-        c2 = -cache.cps_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ps * (
-            cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-            cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v *
+        c1 = -c.cos_ps * (-1.0 - zx * zxp) + c.sin_ps * zxp * zy
+        c2 = -c.cps_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ps * (
+            c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+            c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v *
             zy * zyp
         )
-        c3 = -cache.cos_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) + cache.sin_ps * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy
+        c3 = -c.cos_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp
+        ) + c.sin_ps * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy
         )
-        c4 = -cache.cos_ts * cache.sin_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
-        ) + cache.sin_ts * (
-            -cache.cos_ti * zx - cache.sin_ti * zx * zxp - cache.sin_ti * zy *
+        c4 = -c.cos_ts * c.sin_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
+        ) + c.sin_ts * (
+            -c.cos_ti * zx - c.sin_ti * zx * zxp - c.sin_ti * zy *
             zyp
         )
-        c5 = -cache.cos_ts * cache.sin_ps * (
+        c5 = -c.cos_ts * c.sin_ps * (
             -v * zx + v * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             q + u * zxp + v * zy
-        ) + cache.sin_ts * (
+        ) + c.sin_ts * (
             q * zx + u * zx * zxp + v * zxp * zy
         )
-        c6 = -cache.cos_ts * cache.sin_ps * (
+        c6 = -c.cos_ts * c.sin_ps * (
             -u * zyp + q * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             v * zyp - q * zy * zyp
-        ) + cache.sin_ts * (
+        ) + c.sin_ts * (
             v * zx * zyp - u * zy * zyp
         )
-        rpv = 1.0 + cache.r_vv_i
-        rmv = 1.0 - cache.r_vv_i
+        rpv = 1.0 + c.r_vv_i
+        rmv = 1.0 - c.r_vv_i
         av = rpv / qfix
         bv = rmv / qfix
         favvresult = bv * (
@@ -1113,60 +1113,60 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
         
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
         
-        c1 = -cache.cos_ps * (-1.0 - zx * zxp) + cache.sin_ps * zxp * zy
-        c2 = -cache.cos_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ps * (
-            cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-            cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v *
+        c1 = -c.cos_ps * (-1.0 - zx * zxp) + c.sin_ps * zxp * zy
+        c2 = -c.cos_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ps * (
+            c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+            c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v *
             zy * zyp
         )
-        c3 = -cache.cos_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp) + cache.sin_ps * (
-                -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti *
-                zy - cache.cos_ti * q * zxp * zy
+        c3 = -c.cos_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp) + c.sin_ps * (
+                -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti *
+                zy - c.cos_ti * q * zxp * zy
         )
-        c4 = -cache.cos_ts * cache.sin_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
-        ) + cache.sin_ts * (
-            -cache.cos_ti * zx - cache.sin_ti * zx * zxp - cache.sin_ti * zy *
+        c4 = -c.cos_ts * c.sin_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
+        ) + c.sin_ts * (
+            -c.cos_ti * zx - c.sin_ti * zx * zxp - c.sin_ti * zy *
             zyp
         )
-        c5 = -cache.cos_ts * cache.sin_ps * (
+        c5 = -c.cos_ts * c.sin_ps * (
             -v * zx + v * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             q + u * zxp + v * zy
-        ) + cache.sin_ts * (q * zx + u * zx * zxp + v * zxp * zy)
-        c6 = -cache.cos_ts * cache.sin_ps * (
+        ) + c.sin_ts * (q * zx + u * zx * zxp + v * zxp * zy)
+        c6 = -c.cos_ts * c.sin_ps * (
             -u * zyp + q * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             v * zyp - q * zy * zyp
-        ) + cache.sin_ts * (v * zx * zyp - u * zy * zyp)
-        rph = 1.0 + cache.r_hh_i
-        rmh = 1.0 - cache.r_hh_i
+        ) + c.sin_ts * (v * zx * zyp - u * zy * zyp)
+        rph = 1.0 + c.r_hh_i
+        rmh = 1.0 - c.r_hh_i
         ah = rph / qfix
         bh = rmh / qfix
         fbhhresult = ah * (
@@ -1186,61 +1186,61 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
         
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
         
-        b1 = -cache.cos_ts * cache.sin_ps * (
+        b1 = -c.cos_ts * c.sin_ps * (
             -1.0 - zx * zxp
-        ) - cache.sin_ts * zy - cache.cos_ps * cache.cos_ts * zxp * zy
-        b2 = -cache.cos_ts * cache.sin_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ts * (
-            -cache.cos_ti * q * zy - q * cache.sin_ti * zxp * zy + q *
-            cache.sin_ti * zx * zyp - cache.cos_ti * u * zx * zyp -
-            cache.cos_ti * v * zy * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-            cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-            cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v *
+        ) - c.sin_ts * zy - c.cos_ps * c.cos_ts * zxp * zy
+        b2 = -c.cos_ts * c.sin_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ts * (
+            -c.cos_ti * q * zy - q * c.sin_ti * zxp * zy + q *
+            c.sin_ti * zx * zyp - c.cos_ti * u * zx * zyp -
+            c.cos_ti * v * zy * zyp
+        ) - c.cos_ps * c.cos_ts * (
+            c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+            c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v *
             zy * zyp
         )
-        b3 = -cache.cos_ts * cache.sin_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy) + cache.sin_ts * (
-            -cache.sin_ti * v * zx + cache.cos_ti * v * zx * zxp +
-            cache.sin_ti * u * zy - cache.cos_ti * u * zxp * zy
+        b3 = -c.cos_ts * c.sin_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy) + c.sin_ts * (
+            -c.sin_ti * v * zx + c.cos_ti * v * zx * zxp +
+            c.sin_ti * u * zy - c.cos_ti * u * zxp * zy
         )
-        b4 = -cache.cos_ps * (-cache.sin_ti * zyp + cache.cos_ti * zx * zyp) + \
-            cache.sin_ps * (
-                -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
+        b4 = -c.cos_ps * (-c.sin_ti * zyp + c.cos_ti * zx * zyp) + \
+            c.sin_ps * (
+                -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
              )
-        b5 = -cache.cos_ps * (-v * zx + v * zxp) + cache.sin_ps * (
+        b5 = -c.cos_ps * (-v * zx + v * zxp) + c.sin_ps * (
             q + u * zxp + v * zy
         )
-        b6 = -cache.cos_ps * (-u * zyp + q * zx * zyp) + cache.sin_ps * (
+        b6 = -c.cos_ps * (-u * zyp + q * zx * zyp) + c.sin_ps * (
             v * zyp - q * zy * zyp
         )
-        rp = 1.0 + cache.r_vh_i
-        rm = 1.0 - cache.r_vh_i
+        rp = 1.0 + c.r_vh_i
+        rm = 1.0 - c.r_vh_i
         a = rp / qfix
         b = rm / qfix
         fbhvresult = a * (
@@ -1260,64 +1260,64 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
         v = v
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
 
-        b1 = -cache.cos_ts * cache.sin_ps * (
+        b1 = -c.cos_ts * c.sin_ps * (
             -1.0 - zx * zxp
-        ) - cache.sin_ts * zy - cache.cos_ps * cache.cos_ts * zxp * zy
-        b2 = -cache.cos_ts * cache.sin_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ts * (
-            -cache.cos_ti * q * zy - q * cache.sin_ti * zxp * zy + q *
-            cache.sin_ti * zx * zyp - cache.cos_ti * u * zx * zyp -
-            cache.cos_ti * v * zy * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-            cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-            cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v *
+        ) - c.sin_ts * zy - c.cos_ps * c.cos_ts * zxp * zy
+        b2 = -c.cos_ts * c.sin_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ts * (
+            -c.cos_ti * q * zy - q * c.sin_ti * zxp * zy + q *
+            c.sin_ti * zx * zyp - c.cos_ti * u * zx * zyp -
+            c.cos_ti * v * zy * zyp
+        ) - c.cos_ps * c.cos_ts * (
+            c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+            c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v *
             zy * zyp
         )
-        b3 = -cache.cos_ts * cache.sin_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy
-        ) + cache.sin_ts * (
-            -cache.sin_ti * v * zx + cache.cos_ti * v * zx * zxp +
-            cache.sin_ti * u * zy - cache.cos_ti * u * zxp * zy
+        b3 = -c.cos_ts * c.sin_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy
+        ) + c.sin_ts * (
+            -c.sin_ti * v * zx + c.cos_ti * v * zx * zxp +
+            c.sin_ti * u * zy - c.cos_ti * u * zxp * zy
         )
-        b4 = -cache.cos_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) + cache.sin_ps * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
+        b4 = -c.cos_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) + c.sin_ps * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
         )
-        b5 = -cache.cos_ps * (
+        b5 = -c.cos_ps * (
             -v * zx + v * zxp
-        ) + cache.sin_ps * (q + u * zxp + v * zy)
-        b6 = -cache.cos_ps * (
+        ) + c.sin_ps * (q + u * zxp + v * zy)
+        b6 = -c.cos_ps * (
             -u * zyp + q * zx * zyp
-        ) + cache.sin_ps * (v * zyp - q * zy * zyp)
-        rp = 1.0 + cache.r_vh_i
-        rm = 1.0 - cache.r_vh_i
+        ) + c.sin_ps * (v * zyp - q * zy * zyp)
+        rp = 1.0 + c.r_vh_i
+        rm = 1.0 - c.r_vh_i
         a = rp / qfix
         b = rm / qfix
         fbvhresult = -a * (
@@ -1337,66 +1337,66 @@ class AdvancedIntegralEquationModel(object):
             if self.cache.state < 1:
                 self._init_cache()
             self._spectra_foo()
-        cache = self.cache
-        kxu = cache.sin_ti + u
-        ksxu = cache.sin_ts * cache.cos_ps + u
-        ksyv = cache.sin_ts * cache.sin_ps + v
-        if fabs((cache.cos_ts - qslp).real) < precision:
+        c = self.cache
+        kxu = c.sin_ti + u
+        ksxu = c.sin_ts * c.cos_ps + u
+        ksyv = c.sin_ts * c.sin_ps + v
+        if fabs((c.cos_ts - qslp).real) < precision:
             zx = 0.0
             zy = 0.0
         else:
-            zx = (-ksxu) / (cache.cos_ts - qslp)
-            zy = (-ksyv) / (cache.cos_ts - qslp)
+            zx = (-ksxu) / (c.cos_ts - qslp)
+            zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((cache.cos_ti + qslp).real) < precision:
+        if fabs((c.cos_ti + qslp).real) < precision:
             zxp = 0.0
             zyp = 0.0
         else:
-            zxp = kxu / (cache.cos_ti + qslp)
-            zyp = v / (cache.cos_ti + qslp)
+            zxp = kxu / (c.cos_ti + qslp)
+            zyp = v / (c.cos_ti + qslp)
 
-        c1 = -cache.cos_ps * (-1.0 - zx * zxp) + cache.sin_ps * zxp * zy
-        c2 = -cache.cos_ps * (
-            -cache.cos_ti * q - cache.cos_ti * u * zx - q * cache.sin_ti * zxp -
-            cache.sin_ti * u * zx * zxp - cache.cos_ti * v * zyp -
-            cache.sin_ti * v * zx * zyp
-        ) + cache.sin_ps * (
-            cache.cos_ti * u * zy + cache.sin_ti * u * zxp * zy + q *
-            cache.sin_ti * zyp - cache.cos_ti * u * zyp + cache.sin_ti * v *
+        c1 = -c.cos_ps * (-1.0 - zx * zxp) + c.sin_ps * zxp * zy
+        c2 = -c.cos_ps * (
+            -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
+            c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
+            c.sin_ti * v * zx * zyp
+        ) + c.sin_ps * (
+            c.cos_ti * u * zy + c.sin_ti * u * zxp * zy + q *
+            c.sin_ti * zyp - c.cos_ti * u * zyp + c.sin_ti * v *
             zy * zyp
         )
-        c3 = -cache.cos_ps * (
-            cache.sin_ti * u - q * cache.sin_ti * zx - cache.cos_ti * u * zxp +
-            cache.cos_ti * q * zx * zxp
-        ) + cache.sin_ps * (
-            -cache.sin_ti * v + cache.cos_ti * v * zxp + q * cache.sin_ti * zy -
-            cache.cos_ti * q * zxp * zy
+        c3 = -c.cos_ps * (
+            c.sin_ti * u - q * c.sin_ti * zx - c.cos_ti * u * zxp +
+            c.cos_ti * q * zx * zxp
+        ) + c.sin_ps * (
+            -c.sin_ti * v + c.cos_ti * v * zxp + q * c.sin_ti * zy -
+            c.cos_ti * q * zxp * zy
         )
-        c4 = -cache.cos_ts * cache.sin_ps * (
-            -cache.sin_ti * zyp + cache.cos_ti * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
-            -cache.cos_ti - cache.sin_ti * zxp - cache.cos_ti * zy * zyp
-        ) + cache.sin_ts * (
-            -cache.cos_ti * zx - cache.sin_ti * zx * zxp - cache.sin_ti * zy *
+        c4 = -c.cos_ts * c.sin_ps * (
+            -c.sin_ti * zyp + c.cos_ti * zx * zyp
+        ) - c.cos_ps * c.cos_ts * (
+            -c.cos_ti - c.sin_ti * zxp - c.cos_ti * zy * zyp
+        ) + c.sin_ts * (
+            -c.cos_ti * zx - c.sin_ti * zx * zxp - c.sin_ti * zy *
             zyp
         )
-        c5 = -cache.cos_ts * cache.sin_ps * (
+        c5 = -c.cos_ts * c.sin_ps * (
             -v * zx + v * zxp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             q + u * zxp + v * zy
-        ) + cache.sin_ts * (
+        ) + c.sin_ts * (
             q * zx + u * zx * zxp + v * zxp * zy
         )
-        c6 = -cache.cos_ts * cache.sin_ps * (
+        c6 = -c.cos_ts * c.sin_ps * (
             -u * zyp + q * zx * zyp
-        ) - cache.cos_ps * cache.cos_ts * (
+        ) - c.cos_ps * c.cos_ts * (
             v * zyp - q * zy * zyp
-        ) + cache.sin_ts * (
+        ) + c.sin_ts * (
             v * zx * zyp - u * zy * zyp
         )
     
-        rpv = 1.0 + cache.r_vv_i
-        rmv = 1.0 - cache.r_vv_i
+        rpv = 1.0 + c.r_vv_i
+        rmv = 1.0 - c.r_vv_i
         av = rpv / qfix
         bv = rmv / qfix
         fbvvresult = av * (
