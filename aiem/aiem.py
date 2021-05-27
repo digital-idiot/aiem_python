@@ -1,3 +1,4 @@
+from functools import partial
 from types import SimpleNamespace
 from numpy import integer, floating, complexfloating
 from mpmath import (
@@ -7,7 +8,7 @@ from mpmath import (
 
 class EMWave(object):
     _c0 = mpmathify(299792458)  # Speed of light (m/s) in vacuum
-    _h = mpmathify(6.62607015e-34)  # J.s
+    _h = mpmathify(6.62607015e-34)  # Planck's constant (J.s)
 
     def __init__(
             self,
@@ -199,8 +200,9 @@ class AdvancedIntegralEquationModel(object):
         self.cache.ks2 = self.cache.ks ** 2
         self.cache.kl2 = self.cache.kl ** 2
 
-        iter_factor = self.cache.ks * ((self.cache.cos_ti + self.cache.cos_ts)
-                                       ** 2)
+        iter_factor = self.cache.ks * (
+            (self.cache.cos_ti + self.cache.cos_ts) ** 2
+        )
         n_iter = 1
         term_prev = mpmathify(0)
         term_curr = iter_factor
@@ -209,60 +211,46 @@ class AdvancedIntegralEquationModel(object):
             n_iter += 1
             term_prev = term_curr
             term_curr *= iter_factor / n_iter
-
-        spectra = list()
-        for i in range(n_iter):
+        
+        def calc_spectra(i, c):
             n = mpmathify(i + 1)
-            big_k = self.cache.kl * (
+            big_k = c.kl * (
                 sqrt(
                     (
-                        (
-                            (
-                                self.cache.sin_ts * self.cache.cos_ps
-                            ) - (
-                                self.cache.sin_ti * self.cache.cos_pi
-                            )
-                        ) ** 2
+                        ((c.sin_ts * c.cos_ps) - (c.sin_ti * c.cos_pi)) ** 2
                     ) + (
-                        (
-                            (
-                                self.cache.sin_ts * self.cache.sin_ps
-                            ) - (
-                                self.cache.sin_ti * self.cache.sin_pi
-                            )
-                        ) ** 2
+                        ((c.sin_ts * c.sin_ps) - (c.sin_ti * c.sin_pi)) ** 2
                     )
                 )
             )
-            surf_type = self.cache.get_surface_type()
+            surf_type = c.get_surface_type()
             if surf_type == 1:
-                term = (self.cache.kl2 / (2 * n)) * (
+                term = (c.kl2 / (2 * n)) * (
                     exp(
                         (-1 * (big_k ** 2)) / (4 * n)
                     )
                 )
             elif surf_type == 2:
                 term = (
-                               (self.cache.kl / n) ** 2
-                       ) * (
-                               (1 + ((big_k / n) ** 2)) ** mpmathify(-1.5)
-                       )
+                       (c.kl / n) ** 2) * (
+                       (1 + ((big_k / n) ** 2)) ** mpmathify(-1.5)
+                )
             elif surf_type == 3:
                 if almosteq(big_k, 0):
-                    term = (self.cache.kl ** 2) / ((3 * n) - 2)
+                    term = (c.kl ** 2) / ((3 * n) - 2)
                 else:
                     t = mpmathify(1.5) * n
                     g = gamma(t)
                     bk = ln(besselk((1 - t), big_k))
-                    co_eff = (self.cache.kl ** 2) * ((big_k / 2) ** (t - 1))
+                    co_eff = (c.kl ** 2) * ((big_k / 2) ** (t - 1))
                     term = co_eff * exp((bk - g))
             else:
                 raise NotImplementedError(
                     "Unknown surface type {}!!".format(surf_type)
                 )
+            return term
 
-            spectra.append(term)
-
+        spectra = map(partial(calc_spectra, c=self.cache), range(n_iter))
         eps_r = self.get_eps_r()
         mu_r = self.get_mu_r()
         stem = sqrt((eps_r * mu_r) - self.cache.sti2)
@@ -654,24 +642,103 @@ class AdvancedIntegralEquationModel(object):
             qq4
         ) * self._expal(-qq4)
 
-        # for j in cache.n_iter:
-        #     Ivv[n] = (
-        #         (cache.cos_ti + cache.cos_ts) ** fn
-        #     )* fvv * exp(
-        #         -ks2 * cache.cos_ti * cos_ts
-        #     ) + (0.25)*(Fvaupi*((cos_ts-qq1) **
-        #                                                    fn)+Fvadni*((cos_ts+qq1) ** fn)+Fvaups*((cache.cos_ti+qq2) ** fn)+Fvadns*((cache.cos_ti-qq2) ** fn)+Fvbupi*((cos_ts-qq5) ** fn)+Fvbdni*((cos_ts+qq5) ** fn+Fvbups*((cache.cos_ti+qq6) ** fn)+Fvbdns*((cache.cos_ti-qq6) ** fn))
-        #
-        #     Ihh[n] =((cache.cos_ti+cos_ts) ** fn)*fhh*exp(-ks2*cache.cos_ti*cos_ts)+(0.25)*(Fhaupi*((cos_ts-qq1) ** fn)+Fhadni*((cos_ts+qq1) ** fn)+Fhaups*((cache.cos_ti+qq2) ** fn)+Fhadns*((cache.cos_ti-qq2) ** fn)+Fhbupi*((cos_ts-qq5) ** fn)+Fhbdni*((cos_ts+qq5) ** fn+Fhbups*((cache.cos_ti+qq6) ** fn)+Fhbdns*((cache.cos_ti-qq6) ** fn))
-        #
-        #     Ihv[n] =((cache.cos_ti+cos_ts) ** fn)*fhv*exp(-ks2*cache.cos_ti*cos_ts)+(0.25)*(Fhvaupi*((cos_ts-qq1) ** fn)+Fhvadni*((cos_ts+qq1) ** fn)+Fhvaups*((cache.cos_ti+qq2) ** fn)+Fhvadns*((cache.cos_ti-qq2) ** fn)+Fhvbupi*((cos_ts-qq5) ** fn) +Fhvbdni*((cos_ts+qq5) ** fn)+Fhvbups*((cache.cos_ti+qq6) ** fn)+Fhvbdns*((cache.cos_ti-qq6) ** fn))
-        #
-        #     Ivh[n] =((cache.cos_ti+cos_ts) ** fn)*fvh*exp(-ks2*cache.cos_ti*cos_ts)+(0.25)*(Fvhaupi*((cos_ts-qq1) ** fn)+Fvhadni*((cos_ts+qq1) ** fn)+Fvhaups*((cache.cos_ti+qq2) ** fn)+Fvhadns*((cache.cos_ti-qq2) ** fn)+Fvhbupi*((cos_ts-qq5) ** fn) +Fvhbdni*((cos_ts+qq5) ** fn)+Fvhbups*((cache.cos_ti+qq6) ** fn)+Fvhbdns*((cache.cos_ti-qq6) ** fn))
-        #
-        #     CIvv[n] = conj(Ivv[n])
-        #     CIhh[n] = conj(Ihh[n])
-        #     CIhv[n] = conj(Ihv[n])
-        #     CIvh[n] = conj(Ivh[n])
+        for j in range(cache.n_iter):
+            idx = j + 1
+            ivv = ((cache.cos_ti + cache.cos_ts) ** idx) * fvv * exp(
+                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ) + (
+                0.25 * (
+                    fvaupi*(
+                        (cache.cos_ts - qq1) ** idx
+                    ) + fvadni * (
+                        (cache.cos_ts + qq1) ** idx
+                    ) + fvaups * (
+                        (cache.cos_ti + qq2) ** idx
+                    ) + fvadns * (
+                        (cache.cos_ti - qq2) ** idx
+                    ) + fvbupi * (
+                        (cache.cos_ts - qq3) ** idx
+                    ) + fvbdni * (
+                        (cache.cos_ts + qq3) ** idx
+                    ) + fvbups * (
+                        (cache.cos_ti + qq4) ** idx
+                    ) + fvbdns * (
+                        (cache.cos_ti - qq4) ** idx
+                    )
+                )
+            )
+
+            ihh = ((cache.cos_ti + cache.cos_ts) ** idx) * fhh * exp(
+                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ) + (
+                0.25 * (
+                    fhaupi * (
+                        (cache.cos_ts - qq1) ** idx
+                    ) + fhadni * (
+                        (cache.cos_ts + qq1) ** idx
+                    ) + fhaups * (
+                        (cache.cos_ti + qq2) ** idx
+                    ) + fhadns * (
+                        (cache.cos_ti - qq2) ** idx
+                    ) + fhbupi * (
+                        (cache.cos_ts - qq3) ** idx
+                    ) + fhbdni * (
+                        (cache.cos_ts + qq3) ** idx
+                    ) + fhbups * (
+                        (cache.cos_ti + qq4) ** idx
+                    ) + fhbdns * (
+                        (cache.cos_ti - qq4) ** idx
+                    )
+                )
+            )
+
+            ihv = ((cache.cos_ti + cache.cos_ts) ** idx) * fhv * exp(
+                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ) + (
+                0.25 * (
+                    fhvaupi*(
+                        (cache.cos_ts - qq1) ** idx
+                    ) + fhvadni * (
+                        (cache.cos_ts + qq1) ** idx
+                    ) + fhvaups * (
+                        (cache.cos_ti + qq2) ** idx
+                    ) + fhvadns * (
+                        (cache.cos_ti - qq2) ** idx
+                    ) + fhvbupi * (
+                        (cache.cos_ts - qq3) ** idx
+                    ) + fhvbdni * (
+                        (cache.cos_ts + qq3) ** idx
+                    ) + fhvbups * (
+                        (cache.cos_ti + qq4) ** idx
+                    ) + fhvbdns * (
+                        (cache.cos_ti-qq4) ** idx
+                    )
+                )
+            )
+
+            ivh = ((cache.cos_ti + cache.cos_ts) ** idx) * fvh * exp(
+                -cache.ks2*cache.cos_ti*cache.cos_ts
+            ) + (
+                0.25 * (
+                    fvhaupi*(
+                        (cache.cos_ts - qq1) ** idx
+                    ) + fvhadni * (
+                        (cache.cos_ts + qq1) ** idx
+                    ) + fvhaups * (
+                        (cache.cos_ti + qq2) ** idx
+                    ) + fvhadns * (
+                        (cache.cos_ti - qq2) ** idx
+                    ) + fvhbupi * (
+                        (cache.cos_ts - qq3) ** idx
+                    ) + fvhbdni * (
+                        (cache.cos_ts + qq3) ** idx
+                    ) + fvhbups * (
+                        (cache.cos_ti + qq4) ** idx
+                    ) + fvhbdns * (
+                        (cache.cos_ti - qq4) ** idx
+                    )
+                )
+            )
 
     def set_phi_i(self, phi_i):
         if isinstance(phi_i, (int, float, integer, floating, mpf)):
