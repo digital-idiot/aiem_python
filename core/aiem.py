@@ -1,6 +1,6 @@
 import numpy as np
-from utils import Stash
-from em_wave import EMWave
+from core import EMWave
+from core import Stash
 from numpy import integer, floating, complexfloating
 from mpmath import (
     mpf, mpc, sin, cos, fabs, sqrt, ln, factorial, log10,
