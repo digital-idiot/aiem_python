@@ -3,8 +3,8 @@ from core import EMWave
 from core import Stash
 from numpy import integer, floating, complexfloating
 from mpmath import (
-    mpf, mpc, sin, cos, fabs, sqrt, ln, factorial, log10,
-    re, exp, conj, gamma, besselk, mpmathify, almosteq, arange,
+    mpf, mpc, sin, cos, fabs, sqrt, factorial, ln, log10,
+    re, exp, conj, gamma, besselk, mpmathify, almosteq, arange
 )
 mp_real = np.vectorize(re)
 mp_conj = np.vectorize(conj)
@@ -26,7 +26,7 @@ class AIEM(object):
             nl_cor,  # type: float # kl / k
             nh_rms,  # type: float # ks / k
             eps_r,  # type: complex # (err + eri j)
-            surf_type,  # type: float, int # itype
+            surf_type,  # type: str # itype
             rel_tol=None,  # type: float, mpf # relative tolerance of precision
             abs_tol=None  # type: float, mpf # absolute tolerance of precision
     ):
@@ -95,20 +95,21 @@ class AIEM(object):
 
         self._eps_r = mpmathify(eps_r)
 
+        self.cache = Stash(state=False, atol=abs_tol, rtol=rel_tol)
+
         assert isinstance(
-            surf_type, (int, str)
-        ), 'Surface Type argument must be a valid <int> or <str>'
-        if surf_type == 1 or surf_type.lower() == 'gauss':
-            self._surf_type = 1
-        elif surf_type == 2 or surf_type.lower() == 'exp':
-            self._surf_type = 2
-        elif surf_type == 3 or surf_type.lower() == 'tf_exp':
-            self._surf_type = 3
+            surf_type, str
+        ), 'Surface Type argument must be a valid <str>'
+        if surf_type.lower() == 'gauss':
+            self.cache.surf_type = 1
+        elif surf_type.lower() == 'exp':
+            self.cache.surf_type = 2
+        elif surf_type.lower() == 'tf_exp':
+            self.cache.surf_type = 3
         else:
             raise NotImplementedError(
                 "Unknown surface type {}!!".format(surf_type)
             )
-        self.cache = Stash(state=False, atol=abs_tol, rtol=rel_tol)
 
     def _init_cache(self):
         # Initial Caching
@@ -162,7 +163,7 @@ class AIEM(object):
                     )
                 )
             )
-            surf_type = c.get_surface_type()
+            surf_type = c.surf_type
             if surf_type == 1:
                 term = (c.kl2 / (2 * n)) * (
                     exp(
@@ -194,7 +195,7 @@ class AIEM(object):
             otypes='O'
         )
         spectra = calc_spectras(
-            i=self.cache.n_indices,
+            n=n_iter,
             c=self.cache
         )
         eps_r = self.get_eps_r()
@@ -256,12 +257,12 @@ class AIEM(object):
 
         rv0 = (sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
         rh0 = -(sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
-        f_tv = 8 * (rv0 ^ 2) * c.sti2 * (
+        f_tv = 8 * (rv0 ** 2) * c.sti2 * (
             c.cos_ti + sqrt(eps_r - c.sti2)
         ) / (
             c.cos_ti * (sqrt(eps_r - c.sti2))
         )
-        f_th = -8 * (rh0 ^ 2) * c.sti2 * (
+        f_th = -8 * (rh0 ** 2) * c.sti2 * (
             c.cos_ti + sqrt(eps_r - c.sti2)
         ) / (
             c.cos_ti * (sqrt(eps_r - c.sti2))
@@ -308,7 +309,7 @@ class AIEM(object):
         )
         factors = c.spectra * calc_factors(c.n_indices)
         abc_arr = calc_abcs(
-            k=c.n_indices, s=c
+            m=c.n_indices, s=c
         ) * factors.reshape(-1, 1)
         sum_a, sum_b, sum_c = abc_arr.sum(axis=0)
 
@@ -699,8 +700,8 @@ class AIEM(object):
             otypes='O'
         )
 
-        intensities = calc_intensities(i=c.n_indices, x=c.ks2)  # N x 4
-        coeffs = calc_coeffs(i=c.indices, s=c)  # N
+        intensities = calc_intensities(idx=c.n_indices, s=c)  # N x 4
+        coeffs = calc_coeffs(i=c.n_indices, x=c.ks2)  # N
         sigma0_arr = (
             0.5 * exp(-c.ks2 * (c.cti2 + c.cts2))
         ) * (
@@ -756,7 +757,7 @@ class AIEM(object):
         return self._nl_cor
 
     def get_surface_type(self):
-        return self._surf_type
+        return self.cache.surf_type
 
     def get_eps_r(self):
         return self._eps_r
@@ -1033,7 +1034,7 @@ class AIEM(object):
             zyp = kyv / (c.cos_ti + qslp)
         
         c1 = -c.cos_ps * (-1.0 - zx * zxp) + c.sin_ps * zxp * zy
-        c2 = -c.cps_ps * (
+        c2 = -c.cos_ps * (
             -c.cos_ti * q - c.cos_ti * u * zx - q * c.sin_ti * zxp -
             c.sin_ti * u * zx * zxp - c.cos_ti * v * zyp -
             c.sin_ti * v * zx * zyp
