@@ -2,8 +2,8 @@ from functools import partial
 from types import SimpleNamespace
 from numpy import integer, floating, complexfloating
 from mpmath import (
-    mpmathify, almosteq, mpf, mpc, sin, cos, fabs, sqrt, gamma, besselk, ln,
-    exp, factorial
+    mpf, mpc, sin, cos, fabs, sqrt, ln, factorial,
+    exp, gamma, besselk, mpmathify, almosteq
 )
 
 
@@ -256,23 +256,44 @@ class AdvancedIntegralEquationModel(object):
         mu_r = self.get_mu_r()
         stem = sqrt((eps_r * mu_r) - self.cache.sti2)
         r_vv_i = (
-                         (eps_r * self.cache.cos_ti) - stem
+            (eps_r * self.cache.cos_ti) - stem
         ) / (
-                         (eps_r * self.cache.cos_ti) + stem
+            (eps_r * self.cache.cos_ti) + stem
         )
         r_hh_i = (
-                         (mu_r * self.cache.cos_ti) - stem
+            (mu_r * self.cache.cos_ti) - stem
         ) / (
-                         (mu_r * self.cache.cos_ti) + stem
+            (mu_r * self.cache.cos_ti) + stem
         )
         r_vh_i = (r_vv_i - r_hh_i) / 2
 
+        csl = (
+            sqrt(
+                1 + (
+                    self.cache.cos_ti * self.cache.cos_ts
+                ) - (
+                    self.cache.sin_ti * self.cache.sin_ts * self.cache.cos_ps
+                )
+            )
+        ) / (sqrt(2))
+        sil = sqrt(1 - (csl ** 2))
+        stem_l = sqrt((eps_r * mu_r) - (sil ** 2))
+        r_vv_l = ((eps_r * csl) - stem_l) / ((eps_r * csl) + stem_l)
+        r_hh_l = ((mu_r * csl) - stem_l) / ((mu_r * csl) + stem_l)
+        # r_vh_l = (r_vv_l - r_hh_l) / 2
+
         self.cache.n_iter = n_iter
         self.cache.spectra = spectra
+
         self.cache.r_vv_i = r_vv_i
         self.cache.r_hh_i = r_hh_i
         self.cache.r_vh_i = r_vh_i
-        self.cache.state = 1
+
+        self.cache.r_vv_l = r_vv_l
+        self.cache.r_hh_l = r_hh_l
+        # self.cache.r_vh_l = r_vh_l
+
+        self.cache.state = True
 
     def _expal(self, q):
         q = mpmathify(q)
@@ -287,22 +308,6 @@ class AdvancedIntegralEquationModel(object):
         if not c.state:
             self._init_cache()
         eps_r = self.get_eps_r()
-        mu_r = self.get_mu_r()
-
-        csl = (
-            sqrt(
-                1 + (
-                    c.cos_ti * c.cos_ts
-                ) - (
-                    c.sin_ti * c.sin_ts * c.cos_ps
-                )
-            )
-        ) / (sqrt(2))
-        sil = sqrt(1 - (csl ** 2))
-        stem_l = sqrt((eps_r * mu_r) - (sil ** 2))
-        r_vv_l = ((eps_r * csl) - stem_l) / ((eps_r * csl) + stem_l)
-        r_hh_l = ((mu_r * csl) - stem_l) / ((mu_r * csl) + stem_l)
-        r_vh_l = (r_vv_l - r_hh_l) / 2
 
         rv0 = (sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
         rh0 = -(sqrt(eps_r) - 1) / (sqrt(eps_r) + 1)
@@ -366,9 +371,9 @@ class AdvancedIntegralEquationModel(object):
         if tfh < mpmathify(0):
             tfh = mpmathify(0)
 
-        rvv = c.r_vv_i + (r_vv_l - c.r_vv_i) * tfv
-        rhh = c.r_hh_i + (r_hh_l - c.r_hh_i) * tfh
-        rvh = (rvv - rhh) / mpmathify(2.0)
+        rvv = c.r_vv_i + (c.r_vv_l - c.r_vv_i) * tfv
+        rhh = c.r_hh_i + (c.r_hh_l - c.r_hh_i) * tfh
+        # rvh = (rvv - rhh) / mpmathify(2.0)
 
         zxx = -(
             c.sin_ts * c.cos_ps - c.sin_ti
@@ -460,24 +465,24 @@ class AdvancedIntegralEquationModel(object):
                 h_sn_d - v_sn_t
         ) * (rhh + rvv) * (zyy / d2)
         
-        def calc_term(t, stash):
-            n = t + 1
-            t_factor = (
-               stash.ks2 * (stash.cos_ti + stash.cos_ts) ** (2 * n)
-            ) / factorial(n)
-            return t_factor
-
-        n_sum = sum(list(map(partial(calc_term, c=c), range(c.n_iter))))
-
-        exp_k = exp(
-            -c.ks2 * (c.cos_ts + c.cos_ti) ** 2
-        ) * n_sum
-        k_term = [
-            (0.5 * exp_k * fabs(fvv) ** 2),
-            (0.5 * exp_k * fabs(fhh) ** 2),
-            (0.5 * exp_k * fabs(fhv) ** 2),
-            (0.5 * exp_k * fabs(fvh) ** 2)
-        ]
+        # def calc_term(t, stash):
+        #     n = t + 1
+        #     t_factor = (
+        #        stash.ks2 * (stash.cos_ti + stash.cos_ts) ** (2 * n)
+        #     ) / factorial(n)
+        #     return t_factor
+        #
+        # n_sum = sum(list(map(partial(calc_term, c=c), range(c.n_iter))))
+        #
+        # exp_k = exp(
+        #     -c.ks2 * (c.cos_ts + c.cos_ti) ** 2
+        # ) * n_sum
+        # k_term = [
+        #     (0.5 * exp_k * fabs(fvv) ** 2),
+        #     (0.5 * exp_k * fabs(fhh) ** 2),
+        #     (0.5 * exp_k * fabs(fhv) ** 2),
+        #     (0.5 * exp_k * fabs(fvh) ** 2)
+        # ]
         qq1 = c.cos_ti
         qq2 = c.cos_ts
         qq3 = sqrt(eps_r - c.sti2)
