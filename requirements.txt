@@ -1,2 +1,3 @@
-mpmath==1.2.1
+matplotlib==3.4.1
 numpy==1.20.2
+mpmath==1.2.1

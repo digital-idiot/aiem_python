@@ -1,6 +1,6 @@
 import numpy as np
-from core import EMWave
 from core import Stash
+from core import EMWave
 from numpy import integer, floating, complexfloating
 from mpmath import (
     mpf, mpc, sin, cos, fabs, sqrt, factorial, ln, log10,
@@ -95,7 +95,7 @@ class AIEM(object):
 
         self._eps_r = mpmathify(eps_r)
 
-        self.cache = Stash(state=False, atol=abs_tol, rtol=rel_tol)
+        self.cache = Stash(state=False)
 
         assert isinstance(
             surf_type, str
@@ -110,6 +110,8 @@ class AIEM(object):
             raise NotImplementedError(
                 "Unknown surface type {}!!".format(surf_type)
             )
+        self.cache.atol = abs_tol
+        self.cache.rtol = rel_tol
 
     def _init_cache(self):
         # Initial Caching
@@ -1398,7 +1400,7 @@ class AIEM(object):
         )
         return fbvvresult
 
-    def get_backscatter(self, ap=False, db=True):
+    def get_backscatter(self, ap=False, db=True, arr=True):
         sigma0_arr = self._calc_backscatter()
         npd = np.complex128
         if db:
@@ -1406,6 +1408,9 @@ class AIEM(object):
             npd = np.float64
         if not ap:
             sigma0_arr = sigma0_arr.astype(npd)
-        sigma0 = Stash()
-        sigma0.HH, sigma0.HV, sigma0.VH, sigma0.VV = sigma0_arr
-        return sigma0
+        if arr:
+            return sigma0_arr
+        else:
+            sigma0 = Stash()
+            sigma0.HH, sigma0.HV, sigma0.VH, sigma0.VV = sigma0_arr
+            return sigma0
