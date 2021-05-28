@@ -1,5 +1,6 @@
 import numpy as np
-from types import SimpleNamespace
+from utils import Stash
+from em_wave import EMWave
 from numpy import integer, floating, complexfloating
 from mpmath import (
     mpf, mpc, sin, cos, fabs, sqrt, ln, factorial, log10,
@@ -9,86 +10,10 @@ mp_real = np.vectorize(re)
 mp_conj = np.vectorize(conj)
 mp_log10 = np.vectorize(log10)
 
-__all__ = ['EMWave', 'AdvancedIntegralEquationModel']
+__all__ = ['AIEM']
 
 
-class EMWave(object):
-    _c0 = mpmathify(299792458)  # Speed of light (m/s) in vacuum
-    _h = mpmathify(6.62607015e-34)  # Planck's constant (J.s)
-
-    def __init__(
-            self,
-            wavelength  # {metre}
-    ):
-        if isinstance(wavelength, (int, float, integer, floating, mpf)):
-            self._wavelength = mpmathify(wavelength)
-        else:
-            raise ValueError(
-                "Invalid value {}, for parameter 'wavelength'".format(
-                    wavelength
-                )
-            )
-
-    @classmethod
-    def get_c0(cls):
-        return cls._c0
-
-    @classmethod
-    def get_h(cls):
-        return cls._h
-
-    @classmethod
-    def from_wavelength(
-            cls,
-            wavelength  # {metre}
-    ):
-        return cls(wavelength=wavelength)
-
-    @classmethod
-    def from_frequency(
-            cls,
-            frequency  # {Hz}
-    ):
-        if isinstance(frequency, (int, float, integer, floating, mpf)):
-            wl = cls.get_c0() / mpmathify(frequency)
-            return cls(wavelength=wl)
-        else:
-            raise ValueError(
-                "Invalid value {}, for parameter 'frequency'".format(frequency)
-            )
-
-    @classmethod
-    def from_wave_number(
-            cls,
-            wave_number  # {metre}^{-1}
-    ):
-        if isinstance(wave_number, (int, float, integer, floating, mpf)):
-            wl = mpmathify(1.0) / mpmathify(wave_number)
-            return cls(wavelength=wl)
-        else:
-            raise ValueError(
-                "Invalid value {}, for parameter 'wave_number'".format(
-                    wave_number
-                )
-            )
-
-    def get_wavelength(self):
-        return self._wavelength
-
-    def get_frequency(self):
-        return EMWave.get_c0() / self.get_wavelength()
-
-    def get_wave_number(self):
-        return mpmathify(1.0) / self.get_wavelength()
-
-    def get_momentum(self):
-        return EMWave.get_h() / self.get_wavelength()
-
-    def get_energy(self):
-        return (EMWave.get_h() * EMWave.get_c0()) / self.get_wavelength()
-
-
-class AdvancedIntegralEquationModel(object):
+class AIEM(object):
     _phi_i = mpmathify(0)
     _mu_r = mpmathify(1)
 
@@ -102,6 +27,8 @@ class AdvancedIntegralEquationModel(object):
             nh_rms,  # type: float # ks / k
             eps_r,  # type: complex # (err + eri j)
             surf_type,  # type: float, int # itype
+            rel_tol=None,  # type: float, mpf # relative tolerance of precision
+            abs_tol=None  # type: float, mpf # absolute tolerance of precision
     ):
         if isinstance(theta_i, (int, float, integer, floating, mpf)):
             self._theta_i = mpmathify(theta_i)
@@ -181,7 +108,7 @@ class AdvancedIntegralEquationModel(object):
             raise NotImplementedError(
                 "Unknown surface type {}!!".format(surf_type)
             )
-        self.cache = SimpleNamespace(state=False)
+        self.cache = Stash(state=False, atol=abs_tol, rtol=rel_tol)
 
     def _init_cache(self):
         # Initial Caching
@@ -213,7 +140,14 @@ class AdvancedIntegralEquationModel(object):
         term_prev = mpmathify(0)
         term_curr = iter_factor
 
-        while not (almosteq(term_prev, term_curr)):
+        while not (
+            almosteq(
+                s=term_prev,
+                t=term_curr,
+                abs_eps=self.cache.atol,
+                rel_eps=self.cache.rtol
+            )
+        ):
             n_iter += 1
             term_prev = term_curr
             term_curr *= iter_factor / n_iter
@@ -343,25 +277,25 @@ class AdvancedIntegralEquationModel(object):
             otypes='O'
         )
 
-        def calc_abcvector(m, stash):
+        def calc_abcvector(m, s):
             a_ = (
-                    (stash.ks * stash.cos_ti) ** (2 * m)
+                    (s.ks * s.cos_ti) ** (2 * m)
             )
 
             b_ = (
-                    (stash.ks * stash.cos_ti) ** (2 * m)
+                         (s.ks * s.cos_ti) ** (2 * m)
             ) * (
                 fabs(
-                    f_tv + (2 ** (m + 2)) * rv0 / stash.cos_ti / exp(
-                        (stash.ks * stash.cos_ti) ** 2
+                    f_tv + (2 ** (m + 2)) * rv0 / s.cos_ti / exp(
+                        (s.ks * s.cos_ti) ** 2
                     )
                 ) ** 2
             )
 
-            c_ = ((stash.ks * stash.cos_ti) ** (2 * m)) * (
+            c_ = ((s.ks * s.cos_ti) ** (2 * m)) * (
                 fabs(
-                    f_tv + (2 ** (m + 2)) * rv0 / stash.cos_ti * exp(
-                        (stash.ks * stash.cos_ti) ** 2
+                    f_tv + (2 ** (m + 2)) * rv0 / s.cos_ti * exp(
+                        (s.ks * s.cos_ti) ** 2
                     )
                 ) ** 2
             )
@@ -370,11 +304,11 @@ class AdvancedIntegralEquationModel(object):
         calc_abcs = np.vectorize(
             pyfunc=calc_abcvector,
             otypes='O',
-            excluded={'stash'}, signature='()->(n)'
+            excluded={'s'}, signature='()->(n)'
         )
         factors = c.spectra * calc_factors(c.n_indices)
         abc_arr = calc_abcs(
-            k=c.n_indices, stash=c
+            k=c.n_indices, s=c
         ) * factors.reshape(-1, 1)
         sum_a, sum_b, sum_c = abc_arr.sum(axis=0)
 
@@ -827,7 +761,7 @@ class AdvancedIntegralEquationModel(object):
     def get_eps_r(self):
         return self._eps_r
 
-    def fahh(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def fahh(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -841,14 +775,18 @@ class AdvancedIntegralEquationModel(object):
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
 
-        if fabs((c.cos_ts - qslp).real) < precision:
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((c.cos_ti + qslp).real) < precision:
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -905,7 +843,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return fahhresult
 
-    def fahv(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def fahv(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -917,14 +855,19 @@ class AdvancedIntegralEquationModel(object):
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((c.cos_ti + qslp).real) < precision:
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -978,7 +921,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return fahvresult
 
-    def favh(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def favh(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -990,13 +933,19 @@ class AdvancedIntegralEquationModel(object):
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
-        if fabs((c.cos_ti + qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -1051,7 +1000,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return favhresult
 
-    def favv(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def favv(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -1064,14 +1013,19 @@ class AdvancedIntegralEquationModel(object):
         ksxu = c.sin_ts * c.cos_ps + u
         kyv = v
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
-        
-        if fabs((c.cos_ti + qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -1128,7 +1082,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return favvresult
 
-    def fbhh(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def fbhh(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -1140,14 +1094,19 @@ class AdvancedIntegralEquationModel(object):
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
-        
-        if fabs((c.cos_ti + qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -1199,7 +1158,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return fbhhresult
 
-    def fbhv(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def fbhv(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -1211,14 +1170,19 @@ class AdvancedIntegralEquationModel(object):
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
-        
-        if fabs((c.cos_ti + qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -1271,7 +1235,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return fbhvresult
 
-    def fbvh(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def fbvh(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -1284,14 +1248,19 @@ class AdvancedIntegralEquationModel(object):
         ksxu = c.sin_ts * c.cos_ps + u
         v = v
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((c.cos_ti + qslp).real) < precision:
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -1346,7 +1315,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return fbvhresult
 
-    def fbvv(self, u, v, q, qslp, qfix, precision=mpmathify(1e-10)):
+    def fbvv(self, u, v, q, qslp, qfix):
         u = mpmathify(u)
         v = mpmathify(v)
         q = mpmathify(q)
@@ -1358,14 +1327,19 @@ class AdvancedIntegralEquationModel(object):
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
-        if fabs((c.cos_ts - qslp).real) < precision:
+
+        if almosteq(
+            s=fabs((c.cos_ts - qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zx = 0.0
             zy = 0.0
         else:
             zx = (-ksxu) / (c.cos_ts - qslp)
             zy = (-ksyv) / (c.cos_ts - qslp)
 
-        if fabs((c.cos_ti + qslp).real) < precision:
+        if almosteq(
+            s=fabs((c.cos_ti + qslp).real), t=0, abs_eps=c.atol, rel_eps=c.rtol
+        ):
             zxp = 0.0
             zyp = 0.0
         else:
@@ -1427,10 +1401,10 @@ class AdvancedIntegralEquationModel(object):
         sigma0_arr = self._calc_backscatter()
         npd = np.complex128
         if db:
-            sigma0_arr = 10 * mp_log10(re(sigma0_arr))
+            sigma0_arr = 10 * mp_log10(mp_real(sigma0_arr))
             npd = np.float64
         if not ap:
             sigma0_arr = sigma0_arr.astype(npd)
-        sigma0 = SimpleNamespace()
+        sigma0 = Stash()
         sigma0.HH, sigma0.HV, sigma0.VH, sigma0.VV = sigma0_arr
         return sigma0
