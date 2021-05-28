@@ -1,10 +1,15 @@
-from functools import partial
+import numpy as np
 from types import SimpleNamespace
 from numpy import integer, floating, complexfloating
 from mpmath import (
-    mpf, mpc, sin, cos, fabs, sqrt, ln, factorial,
-    exp, gamma, besselk, mpmathify, almosteq
+    mpf, mpc, sin, cos, fabs, sqrt, ln, factorial, log10,
+    re, exp, conj, gamma, besselk, mpmathify, almosteq, arange,
 )
+mp_real = np.vectorize(re)
+mp_conj = np.vectorize(conj)
+mp_log10 = np.vectorize(log10)
+
+__all__ = ['EMWave', 'AdvancedIntegralEquationModel']
 
 
 class EMWave(object):
@@ -212,9 +217,8 @@ class AdvancedIntegralEquationModel(object):
             n_iter += 1
             term_prev = term_curr
             term_curr *= iter_factor / n_iter
-        
-        def calc_spectra(i, c):
-            n = mpmathify(i + 1)
+
+        def calc_spectra(n, c):
             big_k = c.kl * (
                 sqrt(
                     (
@@ -250,8 +254,15 @@ class AdvancedIntegralEquationModel(object):
                     "Unknown surface type {}!!".format(surf_type)
                 )
             return term
-
-        spectra = list(map(partial(calc_spectra, c=self.cache), range(n_iter)))
+        calc_spectras = np.vectorize(
+            pyfunc=calc_spectra,
+            excluded={'c'},
+            otypes='O'
+        )
+        spectra = calc_spectras(
+            i=self.cache.n_indices,
+            c=self.cache
+        )
         eps_r = self.get_eps_r()
         mu_r = self.get_mu_r()
         stem = sqrt((eps_r * mu_r) - self.cache.sti2)
@@ -282,7 +293,7 @@ class AdvancedIntegralEquationModel(object):
         r_hh_l = ((mu_r * csl) - stem_l) / ((mu_r * csl) + stem_l)
         # r_vh_l = (r_vv_l - r_hh_l) / 2
 
-        self.cache.n_iter = n_iter
+        self.cache.n_indices = 1 + np.array(arange(n_iter), dtype='O')
         self.cache.spectra = spectra
 
         self.cache.r_vv_i = r_vv_i
@@ -303,7 +314,7 @@ class AdvancedIntegralEquationModel(object):
         )
         return expalresult
 
-    def _spectra_foo(self):
+    def _calc_backscatter(self):
         c = self.cache
         if not c.state:
             self._init_cache()
@@ -327,16 +338,17 @@ class AdvancedIntegralEquationModel(object):
         st0h = 1 / (
             (fabs(1 + 8 * rv0 / (c.cos_ti * f_th))) ** 2
         )
+        calc_factors = np.vectorize(
+            pyfunc=lambda i: 1 / factorial(i+1),
+            otypes='O'
+        )
 
-        def calc_abc(k, stash):
-            m = mpmathify(k + 1)
-            i_factor = 1 / factorial(m)
-
-            a_ = i_factor * (
+        def calc_abcvector(m, stash):
+            a_ = (
                     (stash.ks * stash.cos_ti) ** (2 * m)
-            ) * stash.spectra[k]
+            )
 
-            b_ = i_factor * (
+            b_ = (
                     (stash.ks * stash.cos_ti) ** (2 * m)
             ) * (
                 fabs(
@@ -344,21 +356,27 @@ class AdvancedIntegralEquationModel(object):
                         (stash.ks * stash.cos_ti) ** 2
                     )
                 ) ** 2
-            ) * stash.spectra[k]
+            )
 
-            c_ = i_factor * ((stash.ks * stash.cos_ti) ** (2 * m)) * (
+            c_ = ((stash.ks * stash.cos_ti) ** (2 * m)) * (
                 fabs(
                     f_tv + (2 ** (m + 2)) * rv0 / stash.cos_ti * exp(
                         (stash.ks * stash.cos_ti) ** 2
                     )
                 ) ** 2
-            ) * stash.spectra[k]
-            return [a_, b_, c_]
+            )
+            return np.array([a_, b_, c_])
 
-        abc_list = list(
-            map(partial(calc_abc, stash=c), range(c.n_iter))
+        calc_abcs = np.vectorize(
+            pyfunc=calc_abcvector,
+            otypes='O',
+            excluded={'stash'}, signature='()->(n)'
         )
-        sum_a, sum_b, sum_c = list(map(sum, map(list, zip(*abc_list))))
+        factors = c.spectra * calc_factors(c.n_indices)
+        abc_arr = calc_abcs(
+            k=c.n_indices, stash=c
+        ) * factors.reshape(-1, 1)
+        sum_a, sum_b, sum_c = abc_arr.sum(axis=0)
 
         stv = (fabs(f_tv) ** 2) * sum_a / sum_b
         sth = (fabs(f_th) ** 2) * sum_a / sum_c
@@ -464,25 +482,7 @@ class AdvancedIntegralEquationModel(object):
         fvh = -(1 + rhh) * h_sn_h + (1 - rhh) * v_sn_v + (
                 h_sn_d - v_sn_t
         ) * (rhh + rvv) * (zyy / d2)
-        
-        # def calc_term(t, stash):
-        #     n = t + 1
-        #     t_factor = (
-        #        stash.ks2 * (stash.cos_ti + stash.cos_ts) ** (2 * n)
-        #     ) / factorial(n)
-        #     return t_factor
-        #
-        # n_sum = sum(list(map(partial(calc_term, c=c), range(c.n_iter))))
-        #
-        # exp_k = exp(
-        #     -c.ks2 * (c.cos_ts + c.cos_ti) ** 2
-        # ) * n_sum
-        # k_term = [
-        #     (0.5 * exp_k * fabs(fvv) ** 2),
-        #     (0.5 * exp_k * fabs(fhh) ** 2),
-        #     (0.5 * exp_k * fabs(fhv) ** 2),
-        #     (0.5 * exp_k * fabs(fvh) ** 2)
-        # ]
+
         qq1 = c.cos_ti
         qq2 = c.cos_ts
         qq3 = sqrt(eps_r - c.sti2)
@@ -649,103 +649,131 @@ class AdvancedIntegralEquationModel(object):
             qq4
         ) * self._expal(-qq4)
 
-        for j in range(c.n_iter):
-            idx = j + 1
-            ivv = ((c.cos_ti + c.cos_ts) ** idx) * fvv * exp(
-                -c.ks2*c.cos_ti*c.cos_ts
+        def calc_intensity(idx, s):
+            # idx = i + 1
+            ivv = ((s.cos_ti + s.cos_ts) ** idx) * fvv * exp(
+                -s.ks2 * s.cos_ti * s.cos_ts
             ) + (
                 0.25 * (
-                    fvaupi*(
-                        (c.cos_ts - qq1) ** idx
+                    fvaupi * (
+                        (s.cos_ts - qq1) ** idx
                     ) + fvadni * (
-                        (c.cos_ts + qq1) ** idx
+                          (s.cos_ts + qq1) ** idx
                     ) + fvaups * (
-                        (c.cos_ti + qq2) ** idx
+                        (s.cos_ti + qq2) ** idx
                     ) + fvadns * (
-                        (c.cos_ti - qq2) ** idx
+                        (s.cos_ti - qq2) ** idx
                     ) + fvbupi * (
-                        (c.cos_ts - qq3) ** idx
+                        (s.cos_ts - qq3) ** idx
                     ) + fvbdni * (
-                        (c.cos_ts + qq3) ** idx
+                        (s.cos_ts + qq3) ** idx
                     ) + fvbups * (
-                        (c.cos_ti + qq4) ** idx
+                        (s.cos_ti + qq4) ** idx
                     ) + fvbdns * (
-                        (c.cos_ti - qq4) ** idx
+                        (s.cos_ti - qq4) ** idx
                     )
                 )
             )
 
-            ihh = ((c.cos_ti + c.cos_ts) ** idx) * fhh * exp(
-                -c.ks2*c.cos_ti*c.cos_ts
+            ihh = ((s.cos_ti + s.cos_ts) ** idx) * fhh * exp(
+                -s.ks2 * s.cos_ti * s.cos_ts
             ) + (
                 0.25 * (
                     fhaupi * (
-                        (c.cos_ts - qq1) ** idx
+                          (s.cos_ts - qq1) ** idx
                     ) + fhadni * (
-                        (c.cos_ts + qq1) ** idx
+                          (s.cos_ts + qq1) ** idx
                     ) + fhaups * (
-                        (c.cos_ti + qq2) ** idx
+                          (s.cos_ti + qq2) ** idx
                     ) + fhadns * (
-                        (c.cos_ti - qq2) ** idx
+                          (s.cos_ti - qq2) ** idx
                     ) + fhbupi * (
-                        (c.cos_ts - qq3) ** idx
+                          (s.cos_ts - qq3) ** idx
                     ) + fhbdni * (
-                        (c.cos_ts + qq3) ** idx
+                          (s.cos_ts + qq3) ** idx
                     ) + fhbups * (
-                        (c.cos_ti + qq4) ** idx
+                          (s.cos_ti + qq4) ** idx
                     ) + fhbdns * (
-                        (c.cos_ti - qq4) ** idx
+                          (s.cos_ti - qq4) ** idx
                     )
                 )
             )
 
-            ihv = ((c.cos_ti + c.cos_ts) ** idx) * fhv * exp(
-                -c.ks2*c.cos_ti*c.cos_ts
+            ihv = ((s.cos_ti + s.cos_ts) ** idx) * fhv * exp(
+                -s.ks2 * s.cos_ti * s.cos_ts
             ) + (
                 0.25 * (
-                    fhvaupi*(
-                        (c.cos_ts - qq1) ** idx
+                    fhvaupi * (
+                        (s.cos_ts - qq1) ** idx
                     ) + fhvadni * (
-                        (c.cos_ts + qq1) ** idx
+                        (s.cos_ts + qq1) ** idx
                     ) + fhvaups * (
-                        (c.cos_ti + qq2) ** idx
+                        (s.cos_ti + qq2) ** idx
                     ) + fhvadns * (
-                        (c.cos_ti - qq2) ** idx
+                        (s.cos_ti - qq2) ** idx
                     ) + fhvbupi * (
-                        (c.cos_ts - qq3) ** idx
+                        (s.cos_ts - qq3) ** idx
                     ) + fhvbdni * (
-                        (c.cos_ts + qq3) ** idx
+                        (s.cos_ts + qq3) ** idx
                     ) + fhvbups * (
-                        (c.cos_ti + qq4) ** idx
+                        (s.cos_ti + qq4) ** idx
                     ) + fhvbdns * (
-                        (c.cos_ti-qq4) ** idx
+                        (s.cos_ti - qq4) ** idx
                     )
                 )
             )
 
-            ivh = ((c.cos_ti + c.cos_ts) ** idx) * fvh * exp(
-                -c.ks2*c.cos_ti*c.cos_ts
+            ivh = ((s.cos_ti + s.cos_ts) ** idx) * fvh * exp(
+                -s.ks2 * s.cos_ti * s.cos_ts
             ) + (
                 0.25 * (
-                    fvhaupi*(
-                        (c.cos_ts - qq1) ** idx
+                    fvhaupi * (
+                        (s.cos_ts - qq1) ** idx
                     ) + fvhadni * (
-                        (c.cos_ts + qq1) ** idx
+                        (s.cos_ts + qq1) ** idx
                     ) + fvhaups * (
-                        (c.cos_ti + qq2) ** idx
+                        (s.cos_ti + qq2) ** idx
                     ) + fvhadns * (
-                        (c.cos_ti - qq2) ** idx
+                        (s.cos_ti - qq2) ** idx
                     ) + fvhbupi * (
-                        (c.cos_ts - qq3) ** idx
+                        (s.cos_ts - qq3) ** idx
                     ) + fvhbdni * (
-                        (c.cos_ts + qq3) ** idx
+                        (s.cos_ts + qq3) ** idx
                     ) + fvhbups * (
-                        (c.cos_ti + qq4) ** idx
+                        (s.cos_ti + qq4) ** idx
                     ) + fvhbdns * (
-                        (c.cos_ti - qq4) ** idx
+                        (s.cos_ti - qq4) ** idx
                     )
                 )
             )
+            return np.array([ihh, ihv, ivh, ivv], dtype='O')
+
+        calc_intensities = np.vectorize(
+            pyfunc=calc_intensity,
+            otypes='O',
+            excluded={'s'},
+            signature='()->(n)'
+        )
+
+        def calc_coeff(x, i):
+            coeff = (x ** i) / factorial(i)
+            return coeff
+
+        calc_coeffs = np.vectorize(
+            pyfunc=calc_coeff,
+            excluded={'x'},
+            otypes='O'
+        )
+
+        intensities = calc_intensities(i=c.n_indices, x=c.ks2)  # N x 4
+        coeffs = calc_coeffs(i=c.indices, s=c)  # N
+        sigma0_arr = (
+            0.5 * exp(-c.ks2 * (c.cti2 + c.cts2))
+        ) * (
+            coeffs.reshape(-1, 1) * mp_conj(intensities) *
+            intensities * c.spectra.reshape(-1, 1)
+        ).sum(axis=0)
+        return sigma0_arr
 
     def set_phi_i(self, phi_i):
         if isinstance(phi_i, (int, float, integer, floating, mpf)):
@@ -805,10 +833,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
 
         kxu = c.sin_ti + u
@@ -885,10 +911,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -960,10 +984,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -1035,10 +1057,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -1114,10 +1134,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -1187,10 +1205,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -1261,10 +1277,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -1338,10 +1352,8 @@ class AdvancedIntegralEquationModel(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if self.cache.state < 2:
-            if self.cache.state < 1:
-                self._init_cache()
-            self._spectra_foo()
+        if not self.cache.state:
+            self._init_cache()
         c = self.cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -1410,3 +1422,15 @@ class AdvancedIntegralEquationModel(object):
             rmv * c4 * self.get_eps_r() + rpv * c5 + rmv * c6
         )
         return fbvvresult
+
+    def get_backscatter(self, ap=False, db=True):
+        sigma0_arr = self._calc_backscatter()
+        npd = np.complex128
+        if db:
+            sigma0_arr = 10 * mp_log10(re(sigma0_arr))
+            npd = np.float64
+        if not ap:
+            sigma0_arr = sigma0_arr.astype(npd)
+        sigma0 = SimpleNamespace()
+        sigma0.HH, sigma0.HV, sigma0.VH, sigma0.VV = sigma0_arr
+        return sigma0
