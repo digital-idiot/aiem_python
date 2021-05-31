@@ -95,49 +95,49 @@ class AIEM(object):
 
         self._eps_r = mpmathify(eps_r)
 
-        self.cache = Stash(state=False)
+        self._cache = Stash(state=False)
 
         assert isinstance(
             surf_type, str
         ), 'Surface Type argument must be a valid <str>'
         if surf_type.lower() == 'gauss':
-            self.cache.surf_type = 1
+            self._cache.surf_type = 1
         elif surf_type.lower() == 'exp':
-            self.cache.surf_type = 2
+            self._cache.surf_type = 2
         elif surf_type.lower() == 'tf_exp':
-            self.cache.surf_type = 3
+            self._cache.surf_type = 3
         else:
             raise NotImplementedError(
                 "Unknown surface type {}!!".format(surf_type)
             )
-        self.cache.atol = abs_tol
-        self.cache.rtol = rel_tol
+        self._cache.atol = abs_tol
+        self._cache.rtol = rel_tol
 
     def _init_cache(self):
         # Initial Caching
-        self.cache.k = self.get_wave().get_wave_number()
-        self.cache.ks = self.cache.k * self.get_nh_rms()
-        self.cache.kl = self.cache.k * self.get_nl_cor()
+        self._cache.k = self.get_wave().get_wave_number()
+        self._cache.ks = self._cache.k * self.get_nh_rms()
+        self._cache.kl = self._cache.k * self.get_nl_cor()
 
-        self.cache.sin_ti = sin(self.get_theta_i())  # si
-        self.cache.cos_ti = cos(self.get_theta_i())  # cs
-        self.cache.sin_ts = sin(self.get_theta_s())  # sis
-        self.cache.cos_ts = cos(self.get_theta_s())  # css
-        self.cache.sin_pi = sin(self.get_phi_i())
-        self.cache.cos_pi = cos(self.get_phi_i())
-        self.cache.sin_ps = sin(self.get_phi_s())  # sin_ps
-        self.cache.cos_ps = cos(self.get_phi_s())  # cos_ps
+        self._cache.sin_ti = sin(self.get_theta_i())  # si
+        self._cache.cos_ti = cos(self.get_theta_i())  # cs
+        self._cache.sin_ts = sin(self.get_theta_s())  # sis
+        self._cache.cos_ts = cos(self.get_theta_s())  # css
+        self._cache.sin_pi = sin(self.get_phi_i())
+        self._cache.cos_pi = cos(self.get_phi_i())
+        self._cache.sin_ps = sin(self.get_phi_s())  # sin_ps
+        self._cache.cos_ps = cos(self.get_phi_s())  # cos_ps
 
-        self.cache.sti2 = self.cache.sin_ti ** 2  # si2
-        self.cache.sts2 = self.cache.sin_ts ** 2  # sis2
-        self.cache.cti2 = self.cache.cos_ti ** 2  # cs2
-        self.cache.cts2 = self.cache.cos_ts ** 2  # css2
+        self._cache.sti2 = self._cache.sin_ti ** 2  # si2
+        self._cache.sts2 = self._cache.sin_ts ** 2  # sis2
+        self._cache.cti2 = self._cache.cos_ti ** 2  # cs2
+        self._cache.cts2 = self._cache.cos_ts ** 2  # css2
 
-        self.cache.ks2 = self.cache.ks ** 2
-        self.cache.kl2 = self.cache.kl ** 2
+        self._cache.ks2 = self._cache.ks ** 2
+        self._cache.kl2 = self._cache.kl ** 2
 
-        iter_factor = self.cache.ks * (
-                (self.cache.cos_ti + self.cache.cos_ts) ** 2
+        iter_factor = self._cache.ks * (
+                (self._cache.cos_ti + self._cache.cos_ts) ** 2
         )
         n_iter = 1
         term_prev = mpmathify(0)
@@ -147,8 +147,8 @@ class AIEM(object):
             almosteq(
                 s=term_prev,
                 t=term_curr,
-                abs_eps=self.cache.atol,
-                rel_eps=self.cache.rtol
+                abs_eps=self._cache.atol,
+                rel_eps=self._cache.rtol
             )
         ):
             n_iter += 1
@@ -198,29 +198,29 @@ class AIEM(object):
         )
         spectra = calc_spectras(
             n=n_iter,
-            c=self.cache
+            c=self._cache
         )
         eps_r = self.get_eps_r()
         mu_r = self.get_mu_r()
-        stem = sqrt((eps_r * mu_r) - self.cache.sti2)
+        stem = sqrt((eps_r * mu_r) - self._cache.sti2)
         r_vv_i = (
-            (eps_r * self.cache.cos_ti) - stem
+            (eps_r * self._cache.cos_ti) - stem
         ) / (
-            (eps_r * self.cache.cos_ti) + stem
+            (eps_r * self._cache.cos_ti) + stem
         )
         r_hh_i = (
-            (mu_r * self.cache.cos_ti) - stem
+            (mu_r * self._cache.cos_ti) - stem
         ) / (
-            (mu_r * self.cache.cos_ti) + stem
+            (mu_r * self._cache.cos_ti) + stem
         )
         r_vh_i = (r_vv_i - r_hh_i) / 2
 
         csl = (
             sqrt(
                 1 + (
-                    self.cache.cos_ti * self.cache.cos_ts
+                    self._cache.cos_ti * self._cache.cos_ts
                 ) - (
-                    self.cache.sin_ti * self.cache.sin_ts * self.cache.cos_ps
+                    self._cache.sin_ti * self._cache.sin_ts * self._cache.cos_ps
                 )
             )
         ) / (sqrt(2))
@@ -230,29 +230,29 @@ class AIEM(object):
         r_hh_l = ((mu_r * csl) - stem_l) / ((mu_r * csl) + stem_l)
         # r_vh_l = (r_vv_l - r_hh_l) / 2
 
-        self.cache.n_indices = 1 + np.array(arange(n_iter), dtype='O')
-        self.cache.spectra = spectra
+        self._cache.n_indices = 1 + np.array(arange(n_iter), dtype='O')
+        self._cache.spectra = spectra
 
-        self.cache.r_vv_i = r_vv_i
-        self.cache.r_hh_i = r_hh_i
-        self.cache.r_vh_i = r_vh_i
+        self._cache.r_vv_i = r_vv_i
+        self._cache.r_hh_i = r_hh_i
+        self._cache.r_vh_i = r_vh_i
 
-        self.cache.r_vv_l = r_vv_l
-        self.cache.r_hh_l = r_hh_l
-        # self.cache.r_vh_l = r_vh_l
+        self._cache.r_vv_l = r_vv_l
+        self._cache.r_hh_l = r_hh_l
+        # self._cache.r_vh_l = r_vh_l
 
-        self.cache.state = True
+        self._cache.state = True
 
     def _expal(self, q):
         q = mpmathify(q)
-        c = self.cache
+        c = self._cache
         expalresult = exp(
             -c.ks2 * (q ** 2.0 - q * (c.cos_ts - c.cos_ti))
         )
         return expalresult
 
     def _calc_backscatter(self):
-        c = self.cache
+        c = self._cache
         if not c.state:
             self._init_cache()
         eps_r = self.get_eps_r()
@@ -617,21 +617,21 @@ class AIEM(object):
             ) + (
                 0.25 * (
                     fhaupi * (
-                          (s.cos_ts - qq1) ** idx
+                        (s.cos_ts - qq1) ** idx
                     ) + fhadni * (
-                          (s.cos_ts + qq1) ** idx
+                        (s.cos_ts + qq1) ** idx
                     ) + fhaups * (
-                          (s.cos_ti + qq2) ** idx
+                        (s.cos_ti + qq2) ** idx
                     ) + fhadns * (
-                          (s.cos_ti - qq2) ** idx
+                        (s.cos_ti - qq2) ** idx
                     ) + fhbupi * (
-                          (s.cos_ts - qq3) ** idx
+                        (s.cos_ts - qq3) ** idx
                     ) + fhbdni * (
-                          (s.cos_ts + qq3) ** idx
+                        (s.cos_ts + qq3) ** idx
                     ) + fhbups * (
-                          (s.cos_ti + qq4) ** idx
+                        (s.cos_ti + qq4) ** idx
                     ) + fhbdns * (
-                          (s.cos_ti - qq4) ** idx
+                        (s.cos_ti - qq4) ** idx
                     )
                 )
             )
@@ -759,7 +759,7 @@ class AIEM(object):
         return self._nl_cor
 
     def get_surface_type(self):
-        return self.cache.surf_type
+        return self._cache.surf_type
 
     def get_eps_r(self):
         return self._eps_r
@@ -770,9 +770,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
 
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
@@ -852,9 +852,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
@@ -930,9 +930,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
@@ -1009,9 +1009,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         kyv = v
@@ -1091,9 +1091,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
@@ -1167,9 +1167,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
@@ -1244,9 +1244,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         v = v
@@ -1324,9 +1324,9 @@ class AIEM(object):
         q = mpmathify(q)
         qslp = mpmathify(qslp)
         qfix = mpmathify(qfix)
-        if not self.cache.state:
+        if not self._cache.state:
             self._init_cache()
-        c = self.cache
+        c = self._cache
         kxu = c.sin_ti + u
         ksxu = c.sin_ts * c.cos_ps + u
         ksyv = c.sin_ts * c.sin_ps + v
